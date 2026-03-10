@@ -7,7 +7,7 @@ use crate::types::{
 };
 use crate::types::{
     Agent, AssistantMessage, Message, MessageTime, Part, PermissionReply, PermissionRequest,
-    Session, SessionStatus, SessionTime, TextPart, Todo, TodoStatus, UserMessage,
+    Provider, Model, Session, SessionStatus, SessionTime, TextPart, Todo, TodoStatus, UserMessage,
 };
 
 // ── Helpers ─────────────────────────────────────────────────────────────
@@ -912,6 +912,66 @@ fn test_is_session_busy_fallback_to_is_busy() {
 fn test_model_display_name_no_model() {
     let app = test_app();
     assert_eq!(app.model_display_name(), "No model");
+}
+
+#[test]
+fn test_model_display_name_with_provider_and_model() {
+    let mut app = test_app();
+    let mut models = std::collections::HashMap::new();
+    models.insert(
+        "claude-opus-4-5".to_string(),
+        Model {
+            id: "claude-opus-4-5".to_string(),
+            name: "Claude Opus 4.5".to_string(),
+            provider_id: Some("anthropic".to_string()),
+            api: None,
+            family: None,
+            status: None,
+            headers: None,
+            capabilities: None,
+            cost: None,
+            limit: None,
+            release_date: None,
+            variants: None,
+        },
+    );
+    app.providers = vec![Provider {
+        id: "anthropic".to_string(),
+        name: "Anthropic".to_string(),
+        source: None,
+        env: None,
+        key: None,
+        options: None,
+        models,
+    }];
+    app.current_model = Some(("anthropic".to_string(), "claude-opus-4-5".to_string()));
+    assert_eq!(app.model_display_name(), "Anthropic/Claude Opus 4.5");
+}
+
+#[test]
+fn test_model_display_name_fallback_unknown_model() {
+    let mut app = test_app();
+    app.providers = vec![Provider {
+        id: "anthropic".to_string(),
+        name: "Anthropic".to_string(),
+        source: None,
+        env: None,
+        key: None,
+        options: None,
+        models: std::collections::HashMap::new(),
+    }];
+    app.current_model = Some(("anthropic".to_string(), "unknown-model".to_string()));
+    // Falls back to provider name / raw model ID
+    assert_eq!(app.model_display_name(), "Anthropic/unknown-model");
+}
+
+#[test]
+fn test_model_display_name_fallback_unknown_provider() {
+    let mut app = test_app();
+    app.providers = vec![];
+    app.current_model = Some(("unknown-provider".to_string(), "some-model".to_string()));
+    // Falls back to raw provider ID / raw model ID
+    assert_eq!(app.model_display_name(), "unknown-provider/some-model");
 }
 
 #[test]

@@ -1969,6 +1969,52 @@ fn test_provider_roundtrip() {
 }
 
 // ============================================================================
+// ProviderListResponse tests
+// ============================================================================
+
+#[test]
+fn test_provider_list_response_deserialize_with_defaults_and_connected() {
+    let json = json!({
+        "all": [{
+            "id": "anthropic",
+            "name": "Anthropic",
+            "models": {
+                "claude-opus-4-5": {
+                    "id": "claude-opus-4-5",
+                    "name": "Claude Opus 4.5"
+                }
+            }
+        }],
+        "default": {
+            "anthropic": "claude-sonnet-4-6",
+            "opencode": "big-pickle"
+        },
+        "connected": ["anthropic", "opencode"]
+    });
+
+    let resp: ProviderListResponse = serde_json::from_value(json).unwrap();
+    assert_eq!(resp.all.len(), 1);
+    assert_eq!(resp.all[0].id, "anthropic");
+    assert_eq!(resp.default.len(), 2);
+    assert_eq!(resp.default.get("anthropic").unwrap(), "claude-sonnet-4-6");
+    assert_eq!(resp.default.get("opencode").unwrap(), "big-pickle");
+    assert_eq!(resp.connected, vec!["anthropic", "opencode"]);
+}
+
+#[test]
+fn test_provider_list_response_deserialize_missing_optional_fields() {
+    // Server might omit default/connected; they should default to empty
+    let json = json!({
+        "all": []
+    });
+
+    let resp: ProviderListResponse = serde_json::from_value(json).unwrap();
+    assert!(resp.all.is_empty());
+    assert!(resp.default.is_empty());
+    assert!(resp.connected.is_empty());
+}
+
+// ============================================================================
 // Permission tests
 // ============================================================================
 

@@ -201,7 +201,27 @@ impl App {
             Err(e) => tracing::warn!("Failed to load sessions: {}", e),
         }
         match providers_res {
-            Ok(response) => self.providers = response.all,
+            Ok(response) => {
+                self.providers = response.all;
+
+                // Resolve the default model for the first connected provider.
+                // The `default` map gives us providerID → modelID, and
+                // `connected` lists the providerIDs with valid credentials.
+                if self.current_model.is_none() {
+                    for provider_id in &response.connected {
+                        if let Some(model_id) = response.default.get(provider_id) {
+                            self.current_model =
+                                Some((provider_id.clone(), model_id.clone()));
+                            tracing::info!(
+                                "Default model resolved: {}/{}",
+                                provider_id,
+                                model_id
+                            );
+                            break;
+                        }
+                    }
+                }
+            }
             Err(e) => tracing::warn!("Failed to load providers: {}", e),
         }
         match agents_res {

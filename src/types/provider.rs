@@ -6,10 +6,12 @@ use std::collections::HashMap;
 #[serde(rename_all = "camelCase")]
 pub struct ProviderListResponse {
     pub all: Vec<Provider>,
+    /// Maps provider ID → default model ID for that provider.
     #[serde(default)]
-    pub default: Option<serde_json::Value>,
+    pub default: HashMap<String, String>,
+    /// Provider IDs that have valid credentials configured.
     #[serde(default)]
-    pub connected: Option<serde_json::Value>,
+    pub connected: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
