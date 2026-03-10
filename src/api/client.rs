@@ -137,7 +137,10 @@ impl ApiClient {
     /// Create a new client pointing at the given base URL
     /// (e.g. `http://127.0.0.1:3000`).
     pub fn new(base_url: String) -> Self {
-        let client = Client::new();
+        let client = Client::builder()
+            .timeout(std::time::Duration::from_secs(10))
+            .build()
+            .expect("failed to build reqwest client");
         Self {
             client,
             base_url: base_url.trim_end_matches('/').to_string(),

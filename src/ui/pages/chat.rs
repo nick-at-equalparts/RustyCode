@@ -23,12 +23,13 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
         area
     };
 
+    let editor_h = app.editor_height();
     let vert = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Min(1),       // messages (stretches)
-            Constraint::Length(4),     // editor
-            Constraint::Length(1),     // status bar
+            Constraint::Min(1),              // messages (stretches)
+            Constraint::Length(editor_h),     // editor (auto-expands with typed newlines)
+            Constraint::Length(1),            // status bar
         ])
         .split(main_area);
 

@@ -1,5 +1,6 @@
 mod api;
 mod app;
+mod config;
 mod input;
 mod types;
 mod ui;
@@ -27,8 +28,8 @@ struct Cli {
     debug: bool,
 
     /// Theme name to use for the TUI.
-    #[arg(short, long, default_value = "default")]
-    theme: String,
+    #[arg(short, long)]
+    theme: Option<String>,
 }
 
 /// Default ports to probe when auto-detecting a local OpenCode server.
@@ -51,11 +52,12 @@ async fn main() -> Result<()> {
         .init();
 
     // ── Resolve server URL ──────────────────────────────────────────
-    let base_url = match cli.server {
-        Some(url) => url,
-        None => auto_detect_server()
-            .await
-            .unwrap_or_else(|| "http://127.0.0.1:4000".to_string()),
+    let (base_url, auto_detected) = match cli.server {
+        Some(url) => (url, false),
+        None => match auto_detect_server().await {
+            Some(url) => (url, true),
+            None => ("http://127.0.0.1:4000".to_string(), false),
+        },
     };
 
     tracing::info!("Connecting to OpenCode server at {}", base_url);
@@ -63,23 +65,30 @@ async fn main() -> Result<()> {
     // ── API client + health check ───────────────────────────────────
     let client = ApiClient::new(base_url.clone());
 
-    match client.health().await {
-        Ok(resp) => {
-            tracing::info!("Server healthy, version: {}", resp.version);
-        }
-        Err(e) => {
-            tracing::warn!("Health check failed: {}. Proceeding anyway.", e);
+    // Skip redundant health check when auto-detect already verified the server.
+    if !auto_detected {
+        match client.health().await {
+            Ok(resp) => {
+                tracing::info!("Server healthy, version: {}", resp.version);
+            }
+            Err(e) => {
+                tracing::warn!("Health check failed: {}. Proceeding anyway.", e);
+            }
         }
     }
 
-    // ── Build app and load data ─────────────────────────────────────
+    // ── Build app ──────────────────────────────────────────────────
+    let config = config::Config::load();
     let mut app = App::new(client, base_url);
-    app.theme_name = cli.theme;
 
-    if let Err(e) = app.load_initial_data().await {
-        tracing::warn!("Failed to load initial data: {}", e);
-        app.status_message = format!("Partial load: {}", e);
-    }
+    // CLI flag > saved config > "default"
+    app.theme_name = cli
+        .theme
+        .or(config.theme)
+        .unwrap_or_else(|| "default".to_string());
+
+    // Data loading happens inside the event loop, after the first render,
+    // so the TUI appears instantly.
 
     // ── Run the TUI event loop ──────────────────────────────────────
     app::event_loop::run(&mut app)
@@ -91,22 +100,37 @@ async fn main() -> Result<()> {
 
 /// Try to find a running OpenCode server on common local ports.
 ///
-/// Returns `Some(url)` for the first port that responds to a health check,
-/// or `None` if no server is found.
+/// Probes all ports concurrently and returns the first one that responds.
 async fn auto_detect_server() -> Option<String> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_millis(500))
         .build()
         .ok()?;
 
-    for port in AUTO_DETECT_PORTS {
-        let url = format!("http://127.0.0.1:{}", port);
-        let health_url = format!("{}/global/health", url);
-        if let Ok(resp) = client.get(&health_url).send().await {
-            if resp.status().is_success() {
-                tracing::info!("Auto-detected OpenCode server on port {}", port);
-                return Some(url);
+    // Probe all ports concurrently
+    let probes: Vec<_> = AUTO_DETECT_PORTS
+        .iter()
+        .map(|&port| {
+            let client = client.clone();
+            async move {
+                let url = format!("http://127.0.0.1:{}", port);
+                let health_url = format!("{}/global/health", url);
+                match client.get(&health_url).send().await {
+                    Ok(resp) if resp.status().is_success() => Some(url),
+                    _ => None,
+                }
             }
+        })
+        .collect();
+
+    let results = futures::future::join_all(probes).await;
+    for (i, result) in results.into_iter().enumerate() {
+        if let Some(url) = result {
+            tracing::info!(
+                "Auto-detected OpenCode server on port {}",
+                AUTO_DETECT_PORTS[i]
+            );
+            return Some(url);
         }
     }
 

@@ -4,7 +4,7 @@ use ratatui::Frame;
 
 use crate::app::state::App;
 use crate::types::{Message, Part, ToolState};
-use crate::ui::themes::get_theme;
+use crate::ui::themes::{get_theme, Theme};
 
 /// Render the scrollable message history inside `area`.
 pub fn render(frame: &mut Frame, app: &App, area: Rect) {
@@ -16,14 +16,7 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(outer, area);
 
     if app.messages.is_empty() {
-        let empty = Paragraph::new(Line::from(vec![
-            Span::styled(
-                "  No messages yet. Type below to start a conversation.",
-                Style::default().fg(theme.muted),
-            ),
-        ]))
-        .style(Style::default().bg(theme.bg));
-        frame.render_widget(empty, area);
+        render_welcome(frame, app, area, &theme);
         return;
     }
 
@@ -314,8 +307,25 @@ fn render_part<'a>(part: &'a Part, lines: &mut Vec<Line<'a>>, theme: &'static cr
         Part::StepFinish(_) => {
             // StepFinish cost/tokens are rolled into the assistant message footer
         }
+        Part::Agent(ap) => {
+            let agent_name = ap.agent.as_deref().unwrap_or("subagent");
+            lines.push(Line::from(vec![
+                Span::styled(
+                    "   [..] ",
+                    Style::default()
+                        .fg(theme.tool_running)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    format!("Running agent: {}", agent_name),
+                    Style::default()
+                        .fg(theme.tool_running)
+                        .add_modifier(Modifier::ITALIC),
+                ),
+            ]));
+        }
         // Other part variants are rendered minimally
-        Part::Snapshot(_) | Part::Patch(_) | Part::Agent(_) | Part::Retry(_) | Part::Compaction(_) | Part::Subtask(_) => {}
+        Part::Snapshot(_) | Part::Patch(_) | Part::Retry(_) | Part::Compaction(_) | Part::Subtask(_) => {}
     }
 }
 
@@ -421,4 +431,65 @@ fn parse_inline_spans<'a>(line: &'a str, theme: &'static crate::ui::themes::Them
     }
 
     spans
+}
+
+/// Render a centered welcome / landing screen when no conversation is open.
+fn render_welcome(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
+    let project_name = app
+        .project
+        .as_ref()
+        .and_then(|p| p.path.as_deref())
+        .and_then(|p| p.rsplit('/').next())
+        .unwrap_or("rustycode");
+
+    let key_style = Style::default().fg(theme.accent).bold();
+    let desc_style = Style::default().fg(theme.muted);
+
+    let mut lines: Vec<Line> = Vec::new();
+
+    // Title
+    lines.push(Line::from(Span::styled(
+        project_name,
+        Style::default().fg(theme.fg).bold(),
+    )));
+    lines.push(Line::default());
+
+    // Shortcuts (must match actual bindings in input/mod.rs)
+    let shortcuts: &[(&str, &str)] = &[
+        ("Enter",       " Send message"),
+        ("Shift+Enter", " New line"),
+        ("Ctrl+O",      " Open sessions"),
+        ("Ctrl+N",      " New session"),
+        ("Ctrl+B",      " Toggle sidebar"),
+        ("Ctrl+K",      " Switch model"),
+        ("Ctrl+P",      " Command palette"),
+        ("F1",          " Help"),
+        ("Esc",         " Quit"),
+    ];
+
+    for &(k, d) in shortcuts {
+        lines.push(Line::from(vec![
+            Span::styled(k.to_string(), key_style),
+            Span::styled(d.to_string(), desc_style),
+        ]));
+    }
+
+    lines.push(Line::default());
+    lines.push(Line::from(Span::styled(
+        "Type below to start a conversation.",
+        desc_style,
+    )));
+
+    // Center vertically
+    let content_height = lines.len() as u16;
+    let top_pad = area.height.saturating_sub(content_height) / 2;
+
+    let mut padded: Vec<Line> = vec![Line::default(); top_pad as usize];
+    padded.extend(lines);
+
+    let paragraph = Paragraph::new(padded)
+        .alignment(Alignment::Center)
+        .style(Style::default().bg(theme.bg));
+
+    frame.render_widget(paragraph, area);
 }

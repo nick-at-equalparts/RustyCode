@@ -1,6 +1,7 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 
 use crate::app::state::{App, Dialog, Page};
+use crate::config::Config;
 use crate::ui::dialogs::models::filtered_models;
 use crate::ui::themes::list_themes;
 
@@ -42,12 +43,15 @@ pub fn handle_key_event(app: &mut App, key: KeyEvent) -> Action {
 
     // ── Global keybindings ──────────────────────────────────────────
     match (key.modifiers, key.code) {
-        // Ctrl+C  => confirm-quit dialog (or quit if already asked)
+        // Ctrl+C  => abort if busy, otherwise clear input
         (KeyModifiers::CONTROL, KeyCode::Char('c')) => {
             if app.is_session_busy() {
                 return Action::AbortSession;
             }
-            app.open_dialog(Dialog::Quit);
+            app.input_text.clear();
+            app.input_cursor = 0;
+            app.typed_visual_lines = 1;
+            app.paste_line_count = None;
             return Action::None;
         }
         // Ctrl+N  => new session
@@ -102,6 +106,34 @@ pub fn handle_key_event(app: &mut App, key: KeyEvent) -> Action {
     }
 }
 
+/// Handle pasted text (bracketed paste).
+/// Multi-line paste enters "paste mode" — the editor shows "[Pasted X lines]"
+/// and Enter sends the full text. Any other input clears the paste.
+/// Single-line paste inserts inline as normal typed text.
+pub fn handle_paste(app: &mut App, text: &str) {
+    // Terminal paste uses \r for line breaks — normalize to \n.
+    // Handle \r\n (Windows), \r (terminal/old Mac), and \n (Unix).
+    let clean: String = text.replace("\r\n", "\n").replace('\r', "\n");
+    let line_count = clean.lines().count().max(1);
+    tracing::debug!(
+        "handle_paste: {} chars, {} lines, first 80: {:?}",
+        clean.len(),
+        line_count,
+        &clean[..clean.len().min(80)]
+    );
+
+    for c in clean.chars() {
+        app.insert_char(c);
+    }
+
+    if line_count > 1 {
+        app.paste_line_count = Some(line_count);
+    } else {
+        // Single-line paste: expand editor normally
+        app.recalc_visual_lines();
+    }
+}
+
 /// Process a mouse event (scroll wheel).
 pub fn handle_mouse_event(app: &mut App, mouse: MouseEvent) {
     match mouse.kind {
@@ -128,6 +160,62 @@ pub fn handle_mouse_event(app: &mut App, mouse: MouseEvent) {
 // ── Chat page input handling ────────────────────────────────────────────
 
 fn handle_chat_key(app: &mut App, key: KeyEvent) -> Action {
+    tracing::debug!(
+        "chat key: code={:?} modifiers={:?} kind={:?}",
+        key.code,
+        key.modifiers,
+        key.kind
+    );
+
+    // If agent autocomplete is visible, handle it first
+    if app.agent_autocomplete_visible {
+        return handle_agent_autocomplete_key(app, key);
+    }
+
+    // Paste mode: "[Pasted X lines]" is shown. Enter sends, any edit clears.
+    if app.paste_line_count.is_some() {
+        return match key.code {
+            KeyCode::Enter => {
+                app.paste_line_count = None;
+                if !app.input_text.trim().is_empty() {
+                    Action::SendMessage
+                } else {
+                    Action::None
+                }
+            }
+            KeyCode::Esc => {
+                app.open_dialog(Dialog::Quit);
+                Action::None
+            }
+            _ => {
+                // Any other key clears the paste
+                app.input_text.clear();
+                app.input_cursor = 0;
+                app.typed_visual_lines = 1;
+                app.paste_line_count = None;
+                // If it was a printable char, insert it to start fresh
+                if let KeyCode::Char(c) = key.code {
+                    app.insert_char(c);
+                    app.recalc_visual_lines();
+                }
+                Action::None
+            }
+        };
+    }
+
+    // Shift+Enter / Alt+Enter => insert newline.
+    // iTerm2 sends 0x0A (\n) for Shift+Enter, which crossterm reports as Ctrl+J.
+    if (key.code == KeyCode::Enter
+        && (key.modifiers.contains(KeyModifiers::SHIFT)
+            || key.modifiers.contains(KeyModifiers::ALT)))
+        || (key.code == KeyCode::Char('j') && key.modifiers == KeyModifiers::CONTROL)
+        || (key.code == KeyCode::Char('\n'))
+    {
+        app.insert_char('\n');
+        app.recalc_visual_lines();
+        return Action::None;
+    }
+
     match key.code {
         // Enter => send message
         KeyCode::Enter => {
@@ -137,18 +225,22 @@ fn handle_chat_key(app: &mut App, key: KeyEvent) -> Action {
             Action::None
         }
 
-        // Escape => abort if busy, otherwise do nothing
+        // Escape => quit
         KeyCode::Esc => {
-            if app.is_session_busy() {
-                Action::AbortSession
-            } else {
-                Action::None
-            }
+            app.open_dialog(Dialog::Quit);
+            Action::None
         }
 
         // Text input
         KeyCode::Char(c) => {
             app.insert_char(c);
+            app.recalc_visual_lines();
+            // Open agent autocomplete when '@' is typed at a word boundary
+            if c == '@' && is_at_word_start(app) {
+                app.agent_autocomplete_visible = true;
+                app.agent_autocomplete_filter.clear();
+                app.agent_autocomplete_selected = 0;
+            }
             Action::None
         }
 
@@ -194,11 +286,10 @@ fn handle_chat_key(app: &mut App, key: KeyEvent) -> Action {
 
 // ── Logs page input handling ────────────────────────────────────────────
 
-fn handle_logs_key(_app: &mut App, key: KeyEvent) -> Action {
+fn handle_logs_key(app: &mut App, key: KeyEvent) -> Action {
     match key.code {
         KeyCode::Esc => {
-            // Switch back to chat page
-            _app.active_page = Page::Chat;
+            app.open_dialog(Dialog::Quit);
             Action::None
         }
         _ => Action::None,
@@ -323,6 +414,10 @@ fn handle_theme_dialog_key(app: &mut App, key: KeyEvent) -> Action {
             let themes = list_themes();
             if let Some(&name) = themes.get(app.dialog_selected) {
                 app.theme_name = name.to_lowercase();
+                // Persist the choice
+                let mut config = Config::load();
+                config.theme = Some(app.theme_name.clone());
+                config.save();
             }
             app.close_dialog();
             Action::None
@@ -486,5 +581,89 @@ fn handle_quit_dialog_key(app: &mut App, key: KeyEvent) -> Action {
             Action::None
         }
         _ => Action::None,
+    }
+}
+
+// ── Agent autocomplete ─────────────────────────────────────────────────
+
+/// Check if the '@' just inserted is at a word boundary.
+fn is_at_word_start(app: &App) -> bool {
+    let cursor = app.input_cursor;
+    if cursor <= 1 {
+        return true;
+    }
+    let byte_idx = app.cursor_byte_index();
+    let text_before_at = &app.input_text[..byte_idx.saturating_sub(1)];
+    matches!(text_before_at.chars().last(), Some(' ') | Some('\n') | None)
+}
+
+fn handle_agent_autocomplete_key(app: &mut App, key: KeyEvent) -> Action {
+    match key.code {
+        KeyCode::Esc => {
+            app.agent_autocomplete_visible = false;
+            Action::None
+        }
+        KeyCode::Up => {
+            if app.agent_autocomplete_selected > 0 {
+                app.agent_autocomplete_selected -= 1;
+            }
+            Action::None
+        }
+        KeyCode::Down => {
+            let max = app.filtered_agents().len().saturating_sub(1);
+            if app.agent_autocomplete_selected < max {
+                app.agent_autocomplete_selected += 1;
+            }
+            Action::None
+        }
+        KeyCode::Enter | KeyCode::Tab => {
+            let agents = app.filtered_agents();
+            if let Some(agent) = agents.get(app.agent_autocomplete_selected) {
+                let name = agent.name.clone();
+                // Replace "@filter" with "@agentname "
+                let byte_end = app.cursor_byte_index();
+                let text_before = &app.input_text[..byte_end];
+                if let Some(at_byte) = text_before.rfind('@') {
+                    let replacement = format!("@{} ", name);
+                    let new_cursor = app.input_text[..at_byte].chars().count() + name.len() + 2;
+                    app.input_text.replace_range(at_byte..byte_end, &replacement);
+                    app.input_cursor = new_cursor;
+                }
+            }
+            app.agent_autocomplete_visible = false;
+            Action::None
+        }
+        KeyCode::Backspace => {
+            app.delete_char();
+            update_autocomplete_filter(app);
+            Action::None
+        }
+        KeyCode::Char(c) => {
+            app.insert_char(c);
+            app.recalc_visual_lines();
+            update_autocomplete_filter(app);
+            Action::None
+        }
+        _ => {
+            app.agent_autocomplete_visible = false;
+            Action::None
+        }
+    }
+}
+
+/// Update the autocomplete filter from the text between '@' and the cursor.
+fn update_autocomplete_filter(app: &mut App) {
+    let byte_idx = app.cursor_byte_index();
+    let text_before = &app.input_text[..byte_idx];
+    if let Some(at_pos) = text_before.rfind('@') {
+        let filter = &text_before[at_pos + 1..];
+        if filter.contains(' ') || filter.contains('\n') {
+            app.agent_autocomplete_visible = false;
+        } else {
+            app.agent_autocomplete_filter = filter.to_string();
+            app.agent_autocomplete_selected = 0;
+        }
+    } else {
+        app.agent_autocomplete_visible = false;
     }
 }

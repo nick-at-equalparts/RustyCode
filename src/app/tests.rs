@@ -6,7 +6,7 @@ use crate::types::{
     SessionStatusProps, TodoUpdatedProps,
 };
 use crate::types::{
-    AssistantMessage, Message, MessageTime, Part, PermissionReply, PermissionRequest,
+    Agent, AssistantMessage, Message, MessageTime, Part, PermissionReply, PermissionRequest,
     Session, SessionStatus, SessionTime, TextPart, Todo, TodoStatus, UserMessage,
 };
 
@@ -1002,4 +1002,466 @@ fn test_server_disposed_sets_disconnected() {
 
     assert!(!app.connected);
     assert_eq!(app.status_message, "Server disconnected");
+}
+
+// ── apply_backfill ──────────────────────────────────────────────────────
+
+#[test]
+fn test_apply_backfill_replaces_messages_and_adjusts_scroll() {
+    let mut app = test_app();
+    set_current_session(&mut app, "s-1");
+
+    // Simulate initial load: 3 messages, user at scroll=0 (bottom)
+    app.messages = vec![
+        MessageWithParts {
+            info: make_user_message("m-98", "s-1"),
+            parts: vec![],
+        },
+        MessageWithParts {
+            info: make_assistant_message("m-99", "s-1"),
+            parts: vec![],
+        },
+        MessageWithParts {
+            info: make_user_message("m-100", "s-1"),
+            parts: vec![],
+        },
+    ];
+    app.message_scroll = 0;
+
+    // Backfill returns 10 messages (7 older + the same 3 newest)
+    let all_messages: Vec<MessageWithParts> = (1..=10)
+        .map(|i| MessageWithParts {
+            info: make_user_message(&format!("m-{}", i), "s-1"),
+            parts: vec![],
+        })
+        .collect();
+
+    app.apply_backfill(Ok(all_messages));
+
+    assert_eq!(app.messages.len(), 10);
+    // Scroll should be shifted by 7 (10 - 3 = 7 prepended)
+    assert_eq!(app.message_scroll, 7);
+}
+
+#[test]
+fn test_apply_backfill_same_count_no_scroll_change() {
+    let mut app = test_app();
+    set_current_session(&mut app, "s-1");
+
+    app.messages = vec![
+        MessageWithParts {
+            info: make_user_message("m-1", "s-1"),
+            parts: vec![],
+        },
+        MessageWithParts {
+            info: make_assistant_message("m-2", "s-1"),
+            parts: vec![],
+        },
+    ];
+    app.message_scroll = 1;
+
+    // Backfill returns same count (no older messages)
+    let all_messages = vec![
+        MessageWithParts {
+            info: make_user_message("m-1", "s-1"),
+            parts: vec![],
+        },
+        MessageWithParts {
+            info: make_assistant_message("m-2", "s-1"),
+            parts: vec![],
+        },
+    ];
+
+    app.apply_backfill(Ok(all_messages));
+
+    assert_eq!(app.messages.len(), 2);
+    // No prepended messages, scroll unchanged
+    assert_eq!(app.message_scroll, 1);
+}
+
+#[test]
+fn test_apply_backfill_error_leaves_messages_unchanged() {
+    let mut app = test_app();
+    set_current_session(&mut app, "s-1");
+
+    app.messages = vec![MessageWithParts {
+        info: make_user_message("m-1", "s-1"),
+        parts: vec![],
+    }];
+    app.message_scroll = 0;
+
+    app.apply_backfill(Err(anyhow::anyhow!("network error")));
+
+    assert_eq!(app.messages.len(), 1);
+    assert_eq!(app.message_scroll, 0);
+}
+
+// ── apply_session_load (non-backfill path) ──────────────────────────────
+
+#[test]
+fn test_apply_session_load_populates_messages_and_todos() {
+    let mut app = test_app();
+    set_current_session(&mut app, "s-1");
+    app.status_message = "Loading session…".to_string();
+
+    let messages = vec![
+        MessageWithParts {
+            info: make_user_message("m-1", "s-1"),
+            parts: vec![],
+        },
+        MessageWithParts {
+            info: make_assistant_message("m-2", "s-1"),
+            parts: vec![],
+        },
+    ];
+
+    let todos = vec![Todo {
+        id: Some("t-1".to_string()),
+        content: "Fix bug".to_string(),
+        status: TodoStatus::Pending,
+    }];
+
+    app.apply_session_load((Ok(messages), Ok(todos)));
+
+    assert_eq!(app.messages.len(), 2);
+    assert_eq!(app.todos.len(), 1);
+    assert_eq!(app.message_scroll, 0);
+    assert!(app.status_message.is_empty());
+    // With only 2 messages (< INITIAL_MESSAGE_LIMIT=100), no backfill
+    assert!(app.backfill_rx.is_none());
+}
+
+#[test]
+fn test_apply_session_load_clears_status_on_error() {
+    let mut app = test_app();
+    set_current_session(&mut app, "s-1");
+    app.status_message = "Loading session…".to_string();
+
+    app.apply_session_load((
+        Err(anyhow::anyhow!("messages error")),
+        Err(anyhow::anyhow!("todos error")),
+    ));
+
+    assert!(app.messages.is_empty());
+    assert!(app.todos.is_empty());
+    assert!(app.status_message.is_empty());
+}
+
+// ── filtered_agents ─────────────────────────────────────────────────────
+
+fn make_agent(name: &str, hidden: Option<bool>) -> Agent {
+    Agent {
+        name: name.to_string(),
+        description: None,
+        mode: None,
+        native: None,
+        hidden,
+        color: None,
+        model: None,
+        tools: None,
+        system: None,
+        options: None,
+        permission: None,
+    }
+}
+
+#[test]
+fn test_filtered_agents_returns_all_visible_when_no_filter() {
+    let mut app = test_app();
+    app.agents = vec![
+        make_agent("coder", None),
+        make_agent("reviewer", Some(false)),
+        make_agent("secret", Some(true)),
+    ];
+    app.agent_autocomplete_filter = String::new();
+
+    let result = app.filtered_agents();
+    assert_eq!(result.len(), 2);
+    assert_eq!(result[0].name, "coder");
+    assert_eq!(result[1].name, "reviewer");
+}
+
+#[test]
+fn test_filtered_agents_filters_by_name_case_insensitive() {
+    let mut app = test_app();
+    app.agents = vec![
+        make_agent("coder", None),
+        make_agent("CodeReviewer", None),
+        make_agent("tester", None),
+    ];
+    app.agent_autocomplete_filter = "code".to_string();
+
+    let result = app.filtered_agents();
+    assert_eq!(result.len(), 2);
+    assert_eq!(result[0].name, "coder");
+    assert_eq!(result[1].name, "CodeReviewer");
+}
+
+#[test]
+fn test_filtered_agents_excludes_hidden() {
+    let mut app = test_app();
+    app.agents = vec![
+        make_agent("visible", None),
+        make_agent("hidden_agent", Some(true)),
+    ];
+    app.agent_autocomplete_filter = String::new();
+
+    let result = app.filtered_agents();
+    assert_eq!(result.len(), 1);
+    assert_eq!(result[0].name, "visible");
+}
+
+// ── cursor_byte_index ───────────────────────────────────────────────────
+
+#[test]
+fn test_cursor_byte_index_ascii() {
+    let mut app = test_app();
+    app.input_text = "Hello".to_string();
+    app.input_cursor = 2;
+
+    assert_eq!(app.cursor_byte_index(), 2);
+}
+
+#[test]
+fn test_cursor_byte_index_multibyte() {
+    let mut app = test_app();
+    // é is 2 bytes in UTF-8
+    app.input_text = "café".to_string();
+    app.input_cursor = 3; // after 'f'
+
+    // 'c'=1 byte, 'a'=1 byte, 'f'=1 byte → byte index 3
+    assert_eq!(app.cursor_byte_index(), 3);
+}
+
+#[test]
+fn test_cursor_byte_index_at_end() {
+    let mut app = test_app();
+    app.input_text = "abc".to_string();
+    app.input_cursor = 3;
+
+    assert_eq!(app.cursor_byte_index(), 3);
+}
+
+#[test]
+fn test_cursor_byte_index_past_end() {
+    let mut app = test_app();
+    app.input_text = "ab".to_string();
+    app.input_cursor = 10;
+
+    assert_eq!(app.cursor_byte_index(), 2);
+}
+
+// ── editor_height ───────────────────────────────────────────────────────
+
+#[test]
+fn test_editor_height_minimum() {
+    let mut app = test_app();
+    app.typed_visual_lines = 1;
+    // 1 + 2 = 3
+    assert_eq!(app.editor_height(), 3);
+}
+
+#[test]
+fn test_editor_height_caps_at_12() {
+    let mut app = test_app();
+    app.typed_visual_lines = 20;
+    // 20 + 2 = 22, capped at 12
+    assert_eq!(app.editor_height(), 12);
+}
+
+#[test]
+fn test_editor_height_exact_cap() {
+    let mut app = test_app();
+    app.typed_visual_lines = 10;
+    // 10 + 2 = 12, exactly the cap
+    assert_eq!(app.editor_height(), 12);
+}
+
+// ── compute_visual_lines ────────────────────────────────────────────────
+
+#[test]
+fn test_compute_visual_lines_empty() {
+    let app = test_app();
+    assert_eq!(app.compute_visual_lines(80), 1);
+}
+
+#[test]
+fn test_compute_visual_lines_single_short_line() {
+    let mut app = test_app();
+    app.input_text = "Hello".to_string();
+    assert_eq!(app.compute_visual_lines(80), 1);
+}
+
+#[test]
+fn test_compute_visual_lines_wrapping() {
+    let mut app = test_app();
+    // 10 chars at width 4 → ceil(10/4) = 3 visual lines
+    app.input_text = "0123456789".to_string();
+    assert_eq!(app.compute_visual_lines(4), 3);
+}
+
+#[test]
+fn test_compute_visual_lines_newlines() {
+    let mut app = test_app();
+    app.input_text = "line1\nline2\nline3".to_string();
+    assert_eq!(app.compute_visual_lines(80), 3);
+}
+
+#[test]
+fn test_compute_visual_lines_empty_lines() {
+    let mut app = test_app();
+    app.input_text = "a\n\nb".to_string();
+    // "a" = 1, "" = 1, "b" = 1 → 3
+    assert_eq!(app.compute_visual_lines(80), 3);
+}
+
+// ── key_burst_to_paste ──────────────────────────────────────────────────
+
+use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+
+fn make_key(code: KeyCode) -> KeyEvent {
+    KeyEvent {
+        code,
+        modifiers: KeyModifiers::NONE,
+        kind: KeyEventKind::Press,
+        state: KeyEventState::NONE,
+    }
+}
+
+fn make_ctrl_key(ch: char) -> KeyEvent {
+    KeyEvent {
+        code: KeyCode::Char(ch),
+        modifiers: KeyModifiers::CONTROL,
+        kind: KeyEventKind::Press,
+        state: KeyEventState::NONE,
+    }
+}
+
+#[test]
+fn test_key_burst_to_paste_basic_chars() {
+    use crate::app::event_loop::key_burst_to_paste;
+
+    let keys = vec![
+        make_key(KeyCode::Char('H')),
+        make_key(KeyCode::Char('i')),
+    ];
+    assert_eq!(key_burst_to_paste(&keys), "Hi");
+}
+
+#[test]
+fn test_key_burst_to_paste_enter_becomes_newline() {
+    use crate::app::event_loop::key_burst_to_paste;
+
+    let keys = vec![
+        make_key(KeyCode::Char('a')),
+        make_key(KeyCode::Enter),
+        make_key(KeyCode::Char('b')),
+    ];
+    assert_eq!(key_burst_to_paste(&keys), "a\nb");
+}
+
+#[test]
+fn test_key_burst_to_paste_ctrl_j_becomes_newline() {
+    use crate::app::event_loop::key_burst_to_paste;
+
+    let keys = vec![
+        make_key(KeyCode::Char('x')),
+        make_ctrl_key('j'),
+        make_key(KeyCode::Char('y')),
+    ];
+    assert_eq!(key_burst_to_paste(&keys), "x\ny");
+}
+
+#[test]
+fn test_key_burst_to_paste_ctrl_m_becomes_newline() {
+    use crate::app::event_loop::key_burst_to_paste;
+
+    let keys = vec![
+        make_key(KeyCode::Char('a')),
+        make_ctrl_key('m'),
+        make_key(KeyCode::Char('b')),
+    ];
+    assert_eq!(key_burst_to_paste(&keys), "a\nb");
+}
+
+#[test]
+fn test_key_burst_to_paste_cr_lf_chars() {
+    use crate::app::event_loop::key_burst_to_paste;
+
+    let keys = vec![
+        make_key(KeyCode::Char('a')),
+        make_key(KeyCode::Char('\r')),
+        make_key(KeyCode::Char('\n')),
+        make_key(KeyCode::Char('b')),
+    ];
+    // Both \r and \n become \n
+    assert_eq!(key_burst_to_paste(&keys), "a\n\nb");
+}
+
+#[test]
+fn test_key_burst_to_paste_skips_non_printable() {
+    use crate::app::event_loop::key_burst_to_paste;
+
+    let keys = vec![
+        make_key(KeyCode::Char('a')),
+        make_key(KeyCode::Tab),
+        make_key(KeyCode::Backspace),
+        make_key(KeyCode::Char('b')),
+    ];
+    assert_eq!(key_burst_to_paste(&keys), "ab");
+}
+
+#[test]
+fn test_key_burst_to_paste_empty() {
+    use crate::app::event_loop::key_burst_to_paste;
+
+    let keys: Vec<KeyEvent> = vec![];
+    assert_eq!(key_burst_to_paste(&keys), "");
+}
+
+// ── handle_paste ────────────────────────────────────────────────────────
+
+#[test]
+fn test_handle_paste_normalizes_cr_to_lf() {
+    let mut app = test_app();
+    crate::input::handle_paste(&mut app, "line1\rline2");
+
+    assert_eq!(app.input_text, "line1\nline2");
+}
+
+#[test]
+fn test_handle_paste_normalizes_crlf_to_lf() {
+    let mut app = test_app();
+    crate::input::handle_paste(&mut app, "line1\r\nline2\r\nline3");
+
+    assert_eq!(app.input_text, "line1\nline2\nline3");
+}
+
+#[test]
+fn test_handle_paste_single_line_no_paste_mode() {
+    let mut app = test_app();
+    crate::input::handle_paste(&mut app, "hello world");
+
+    assert_eq!(app.input_text, "hello world");
+    assert!(app.paste_line_count.is_none());
+}
+
+#[test]
+fn test_handle_paste_multi_line_sets_paste_mode() {
+    let mut app = test_app();
+    crate::input::handle_paste(&mut app, "line1\nline2\nline3");
+
+    assert_eq!(app.input_text, "line1\nline2\nline3");
+    assert_eq!(app.paste_line_count, Some(3));
+}
+
+#[test]
+fn test_handle_paste_appends_to_existing_input() {
+    let mut app = test_app();
+    app.input_text = "prefix ".to_string();
+    app.input_cursor = 7;
+
+    crate::input::handle_paste(&mut app, "pasted");
+
+    assert_eq!(app.input_text, "prefix pasted");
 }

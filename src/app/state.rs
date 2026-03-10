@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 use anyhow::Result;
+use tokio::sync::oneshot;
 
 use crate::api::client::{ModelSelector, PartInput, SendMessageRequest};
 use crate::api::ApiClient;
@@ -9,6 +10,19 @@ use crate::types::{
     Agent, Command, Event, MessagePartDeltaProps, MessageWithParts, Part, PermissionRequest,
     Project, Provider, QuestionRequest, Session, SessionStatus, Toast, Todo, TuiToastProps,
 };
+
+/// Result of a background session load (messages + todos).
+pub type SessionLoadResult = (
+    Result<Vec<MessageWithParts>>,
+    Result<Vec<Todo>>,
+);
+
+/// Number of recent messages to fetch on session open (fast initial load).
+/// The server supports `?limit=N` and returns the N most recent messages.
+const INITIAL_MESSAGE_LIMIT: u32 = 100;
+
+/// Result of a background full-history backfill.
+pub type BackfillResult = Result<Vec<MessageWithParts>>;
 
 // ── UI enums ────────────────────────────────────────────────────────────
 
@@ -84,6 +98,24 @@ pub struct App {
 
     // Theme
     pub theme_name: String,
+
+    // Editor sizing — visual line count from typed input (not paste)
+    pub typed_visual_lines: u16,
+    pub last_terminal_width: u16,
+
+    // Paste mode: when Some, editor shows "[Pasted X lines]" instead of raw text.
+    // Enter sends, any other input clears.
+    pub paste_line_count: Option<usize>,
+
+    // Agent autocomplete
+    pub agent_autocomplete_visible: bool,
+    pub agent_autocomplete_selected: usize,
+    pub agent_autocomplete_filter: String,
+
+    // Background session load (messages + todos arrive asynchronously)
+    pub session_load_rx: Option<oneshot::Receiver<SessionLoadResult>>,
+    // Background full-history backfill (fires after initial fast load)
+    pub backfill_rx: Option<oneshot::Receiver<BackfillResult>>,
 }
 
 impl App {
@@ -126,6 +158,18 @@ impl App {
             is_busy: false,
 
             theme_name: "default".to_string(),
+
+            typed_visual_lines: 1,
+            last_terminal_width: 80,
+
+            paste_line_count: None,
+
+            agent_autocomplete_visible: false,
+            agent_autocomplete_selected: 0,
+            agent_autocomplete_filter: String::new(),
+
+            session_load_rx: None,
+            backfill_rx: None,
         }
     }
 
@@ -133,47 +177,38 @@ impl App {
 
     /// Fetch initial data from the server: sessions, providers, agents,
     /// commands, project, and VCS info.
+    ///
+    /// All requests fire in a single parallel wave. No conversation is
+    /// auto-selected — the UI shows a welcome screen until the user picks one.
     pub async fn load_initial_data(&mut self) -> Result<()> {
         self.status_message = "Loading...".to_string();
 
-        // Fetch project info first (need project ID for session listing)
-        match self.client.get_current_project().await {
+        // Everything in one parallel wave (sessions listing works without project ID)
+        let (project_res, sessions_res, providers_res, agents_res, commands_res) = tokio::join!(
+            self.client.get_current_project(),
+            self.client.list_sessions(None),
+            self.client.list_providers(),
+            self.client.list_agents(),
+            self.client.list_commands(),
+        );
+
+        match project_res {
             Ok(project) => self.project = Some(project),
             Err(e) => tracing::warn!("Failed to load project: {}", e),
         }
-
-        // Fetch sessions (use project ID if available)
-        let project_id = self.project.as_ref().and_then(|p| p.id.as_deref());
-        match self.client.list_sessions(project_id).await {
-            Ok(sessions) => {
-                self.sessions = sessions;
-                // Auto-select the most recent session if available
-                if self.current_session.is_none() {
-                    if let Some(first) = self.sessions.first() {
-                        let session_id = first.id.clone();
-                        if let Err(e) = self.select_session(&session_id).await {
-                            tracing::warn!("Failed to select initial session: {}", e);
-                        }
-                    }
-                }
-            }
+        match sessions_res {
+            Ok(sessions) => self.sessions = sessions,
             Err(e) => tracing::warn!("Failed to load sessions: {}", e),
         }
-
-        // Fetch providers
-        match self.client.list_providers().await {
+        match providers_res {
             Ok(response) => self.providers = response.all,
             Err(e) => tracing::warn!("Failed to load providers: {}", e),
         }
-
-        // Fetch agents
-        match self.client.list_agents().await {
+        match agents_res {
             Ok(agents) => self.agents = agents,
             Err(e) => tracing::warn!("Failed to load agents: {}", e),
         }
-
-        // Fetch commands
-        match self.client.list_commands().await {
+        match commands_res {
             Ok(commands) => self.commands = commands,
             Err(e) => tracing::warn!("Failed to load commands: {}", e),
         }
@@ -183,39 +218,121 @@ impl App {
         Ok(())
     }
 
-    /// Select a session by ID and load its messages.
-    pub async fn select_session(&mut self, session_id: &str) -> Result<()> {
-        // Find the session in our list or fetch it
-        let session = if let Some(s) = self.sessions.iter().find(|s| s.id == session_id) {
-            s.clone()
-        } else {
-            self.client.get_session(session_id).await?
-        };
+    /// Select a session by ID.
+    ///
+    /// Updates the UI immediately (clears messages, shows "Loading…") and
+    /// spawns a background task to fetch messages + todos. The event loop
+    /// polls `session_load_rx` and applies the results when they arrive.
+    pub fn select_session(&mut self, session_id: &str) {
+        // Set current session from the list (or just store the ID)
+        if let Some(s) = self.sessions.iter().find(|s| s.id == session_id) {
+            self.current_session = Some(s.clone());
+        }
 
-        self.current_session = Some(session);
+        // Clear stale data so the UI shows a clean loading state
+        self.messages.clear();
+        self.message_scroll = 0;
+        self.todos.clear();
+        self.status_message = "Loading session…".to_string();
 
-        // Load messages for this session
-        match self.client.list_messages(session_id, None).await {
+        // Spawn background fetch: grab the last INITIAL_MESSAGE_LIMIT messages
+        // (fast), then backfill the full history.
+        let (tx, rx) = oneshot::channel();
+        let client = self.client.clone();
+        let sid = session_id.to_string();
+        tokio::spawn(async move {
+            let t0 = Instant::now();
+            let result = tokio::join!(
+                client.list_messages(&sid, Some(INITIAL_MESSAGE_LIMIT)),
+                client.get_session_todos(&sid),
+            );
+            tracing::info!(
+                "Session load took {:.1}s (messages: {}, todos: {})",
+                t0.elapsed().as_secs_f64(),
+                match &result.0 {
+                    Ok(m) => format!("{} msgs", m.len()),
+                    Err(e) => format!("err: {}", e),
+                },
+                match &result.1 {
+                    Ok(t) => format!("{} todos", t.len()),
+                    Err(e) => format!("err: {}", e),
+                },
+            );
+            let _ = tx.send(result);
+        });
+        self.session_load_rx = Some(rx);
+    }
+
+    /// Apply the result of a background session load.
+    ///
+    /// If the initial load returned exactly INITIAL_MESSAGE_LIMIT messages,
+    /// there are probably more — kick off a background full-history fetch.
+    pub fn apply_session_load(&mut self, result: SessionLoadResult) {
+        let (messages_res, todos_res) = result;
+        let mut need_backfill = false;
+        match messages_res {
             Ok(messages) => {
+                need_backfill = messages.len() as u32 >= INITIAL_MESSAGE_LIMIT;
                 self.messages = messages;
                 self.message_scroll = 0;
             }
             Err(e) => {
-                tracing::warn!("Failed to load messages for session {}: {}", session_id, e);
-                self.messages.clear();
+                tracing::warn!("Failed to load messages: {}", e);
             }
         }
-
-        // Load todos for this session
-        match self.client.get_session_todos(session_id).await {
+        match todos_res {
             Ok(todos) => self.todos = todos,
             Err(e) => {
-                tracing::debug!("Failed to load todos for session {}: {}", session_id, e);
-                self.todos.clear();
+                tracing::debug!("Failed to load todos: {}", e);
             }
         }
+        self.status_message = String::new();
 
-        Ok(())
+        // Kick off full-history backfill if we likely have more messages
+        if need_backfill {
+            if let Some(session) = &self.current_session {
+                let (tx, rx) = oneshot::channel();
+                let client = self.client.clone();
+                let sid = session.id.clone();
+                tokio::spawn(async move {
+                    let t0 = Instant::now();
+                    let result = client.list_messages(&sid, None).await;
+                    tracing::info!(
+                        "Backfill took {:.1}s ({})",
+                        t0.elapsed().as_secs_f64(),
+                        match &result {
+                            Ok(m) => format!("{} msgs", m.len()),
+                            Err(e) => format!("err: {}", e),
+                        },
+                    );
+                    let _ = tx.send(result);
+                });
+                self.backfill_rx = Some(rx);
+            }
+        }
+    }
+
+    /// Apply the full-history backfill, preserving the user's scroll position.
+    pub fn apply_backfill(&mut self, result: BackfillResult) {
+        match result {
+            Ok(all_messages) => {
+                // The user is looking at the newest messages (from the initial load).
+                // Prepend the older history so the scroll position stays stable.
+                let old_len = self.messages.len();
+                self.messages = all_messages;
+                let new_len = self.messages.len();
+                // Shift scroll to compensate for prepended messages
+                let prepended = new_len.saturating_sub(old_len);
+                self.message_scroll += prepended;
+                tracing::debug!(
+                    "Backfill applied: {} → {} messages, scroll adjusted by {}",
+                    old_len, new_len, prepended
+                );
+            }
+            Err(e) => {
+                tracing::warn!("Backfill failed: {}", e);
+            }
+        }
     }
 
     /// Create a new session and select it.
@@ -223,7 +340,7 @@ impl App {
         let session = self.client.create_session(None, None).await?;
         let session_id = session.id.clone();
         self.sessions.insert(0, session);
-        self.select_session(&session_id).await?;
+        self.select_session(&session_id);
         Ok(())
     }
 
@@ -231,6 +348,26 @@ impl App {
     pub async fn send_message(&mut self) -> Result<()> {
         let text = self.input_text.trim().to_string();
         if text.is_empty() {
+            return Ok(());
+        }
+
+        // Extract @agent prefix if present
+        let (agent, message_text) = if text.starts_with('@') {
+            if let Some(space_idx) = text.find(' ') {
+                let name = &text[1..space_idx];
+                if self.agents.iter().any(|a| a.name == name) {
+                    (Some(name.to_string()), text[space_idx..].trim().to_string())
+                } else {
+                    (None, text)
+                }
+            } else {
+                (None, text)
+            }
+        } else {
+            (None, text)
+        };
+
+        if message_text.is_empty() {
             return Ok(());
         }
 
@@ -254,13 +391,13 @@ impl App {
         let request = SendMessageRequest {
             parts: vec![PartInput::Text {
                 id: None,
-                text,
+                text: message_text,
                 synthetic: None,
                 ignored: None,
             }],
             message_id: None,
             model: model_selector,
-            agent: None,
+            agent,
             no_reply: None,
             system: None,
             variant: None,
@@ -274,6 +411,8 @@ impl App {
         // Clear input after successful send
         self.input_text.clear();
         self.input_cursor = 0;
+        self.typed_visual_lines = 1;
+        self.paste_line_count = None;
         self.is_busy = true;
 
         Ok(())
@@ -639,6 +778,7 @@ impl App {
             self.input_cursor -= 1;
             let byte_idx = self.cursor_byte_index();
             self.input_text.remove(byte_idx);
+            self.recalc_visual_lines();
         }
     }
 
@@ -648,6 +788,7 @@ impl App {
         if self.input_cursor < char_count {
             let byte_idx = self.cursor_byte_index();
             self.input_text.remove(byte_idx);
+            self.recalc_visual_lines();
         }
     }
 
@@ -676,8 +817,25 @@ impl App {
         self.input_cursor = self.input_text.chars().count();
     }
 
+    /// Returns agents matching the current autocomplete filter.
+    pub fn filtered_agents(&self) -> Vec<&Agent> {
+        let filter = self.agent_autocomplete_filter.to_lowercase();
+        self.agents
+            .iter()
+            .filter(|a| {
+                if a.hidden == Some(true) {
+                    return false;
+                }
+                if filter.is_empty() {
+                    return true;
+                }
+                a.name.to_lowercase().contains(&filter)
+            })
+            .collect()
+    }
+
     /// Convert the character-based cursor position to a byte index.
-    fn cursor_byte_index(&self) -> usize {
+    pub(crate) fn cursor_byte_index(&self) -> usize {
         self.input_text
             .char_indices()
             .nth(self.input_cursor)
@@ -695,6 +853,41 @@ impl App {
         self.message_scroll = self.message_scroll.saturating_sub(1);
     }
 
+    /// Desired editor height: visual lines + 2 for borders, capped at 12.
+    pub fn editor_height(&self) -> u16 {
+        (self.typed_visual_lines + 2).min(12)
+    }
+
+    /// Compute the number of visual lines the input text requires at the given inner width.
+    pub fn compute_visual_lines(&self, inner_width: u16) -> u16 {
+        if self.input_text.is_empty() {
+            return 1;
+        }
+        let w = inner_width.max(1) as usize;
+        let mut count: usize = 0;
+        for line in self.input_text.split('\n') {
+            let chars = line.chars().count();
+            if chars == 0 {
+                count += 1;
+            } else {
+                count += (chars + w - 1) / w;
+            }
+        }
+        count as u16
+    }
+
+    /// Recalculate `typed_visual_lines` from the current input text and terminal width.
+    /// Call this after typed edits (not paste) to auto-expand the editor.
+    pub fn recalc_visual_lines(&mut self) {
+        let editor_width = if self.sidebar_visible {
+            self.last_terminal_width * 75 / 100
+        } else {
+            self.last_terminal_width
+        };
+        let inner_width = editor_width.saturating_sub(2).max(1);
+        self.typed_visual_lines = self.compute_visual_lines(inner_width);
+    }
+
     // ── UI helpers ──────────────────────────────────────────────────
 
     pub fn toggle_sidebar(&mut self) {
@@ -708,9 +901,17 @@ impl App {
     }
 
     pub fn close_dialog(&mut self) {
-        self.active_dialog = None;
         self.dialog_filter.clear();
         self.dialog_selected = 0;
+
+        // Re-surface pending permission/question dialogs
+        if !self.pending_permissions.is_empty() {
+            self.active_dialog = Some(Dialog::Permission);
+        } else if !self.pending_questions.is_empty() {
+            self.active_dialog = Some(Dialog::Question);
+        } else {
+            self.active_dialog = None;
+        }
     }
 
     /// Returns the title of the current session, or a default string.
