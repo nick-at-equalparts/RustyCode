@@ -11,9 +11,9 @@ use tracing_subscriber::EnvFilter;
 use api::ApiClient;
 use app::App;
 
-/// OpenCode TUI - a terminal user interface for the OpenCode server.
+/// RustyCode - a terminal user interface for the OpenCode server.
 #[derive(Parser, Debug)]
-#[command(name = "opencode-tui", version, about)]
+#[command(name = "rustycode", version, about)]
 struct Cli {
     /// Server URL to connect to.
     ///

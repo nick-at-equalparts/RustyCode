@@ -1,4 +1,4 @@
-# opencode-tui
+# RustyCode
 
 A terminal UI for [OpenCode](https://github.com/sst/opencode) built with [Ratatui](https://ratatui.rs).
 
@@ -15,7 +15,7 @@ A terminal UI for [OpenCode](https://github.com/sst/opencode) built with [Ratatu
 cargo build --release
 ```
 
-The binary will be at `target/release/opencode-tui`.
+The binary will be at `target/release/rustycode`.
 
 ## Run
 
@@ -63,4 +63,4 @@ OPENCODE_SERVER=http://localhost:4000 cargo run --release
 
 ## License
 
-MIT
+GPL-3.0 — see [LICENSE](LICENSE) for details.
