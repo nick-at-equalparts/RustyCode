@@ -9,7 +9,7 @@ use crate::ui::themes::get_theme;
 pub fn render(frame: &mut Frame, app: &App, area: Rect) {
     let theme = get_theme(&app.theme_name);
 
-    // ---- Left section: mode pill + thinking + project name + git branch ----
+    // ---- Left section: mode pill + project name + git branch ----
     let mut left_parts: Vec<Span> = Vec::new();
 
     // Mode indicator
@@ -21,16 +21,6 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect) {
         format!(" {} ", mode_label),
         Style::default().fg(mode_fg).bg(mode_bg).add_modifier(Modifier::BOLD),
     ));
-
-    // "Thinking..." indicator right after mode pill — always visible when busy
-    if app.is_session_busy() {
-        left_parts.push(Span::styled(
-            " Thinking... ",
-            Style::default()
-                .fg(theme.accent)
-                .add_modifier(Modifier::ITALIC | Modifier::BOLD),
-        ));
-    }
 
     let project_name = app.project_name();
     left_parts.push(Span::styled(

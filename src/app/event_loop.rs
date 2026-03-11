@@ -188,6 +188,7 @@ pub async fn run(app: &mut App) -> Result<()> {
                         }
                         CrosstermEvent::Mouse(mouse_event) => {
                             input::handle_mouse_event(app, mouse_event);
+                            terminal.draw(|frame| crate::ui::draw(frame, app))?;
                         }
                         CrosstermEvent::Resize(w, _) => {
                             app.last_terminal_width = w;

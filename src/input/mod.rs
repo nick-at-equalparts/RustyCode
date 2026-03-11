@@ -463,7 +463,12 @@ fn handle_model_dialog_key(app: &mut App, key: KeyEvent) -> Action {
         KeyCode::Enter => {
             let entries = filtered_models(app);
             if let Some(entry) = entries.get(app.dialog_selected) {
-                app.current_model = Some((entry.provider_id.clone(), entry.model_id.clone()));
+                let model = (entry.provider_id.clone(), entry.model_id.clone());
+                app.current_model = Some(model.clone());
+                // Persist the choice
+                let mut config = Config::load();
+                config.model = Some(model);
+                config.save();
             }
             app.close_dialog();
             Action::None

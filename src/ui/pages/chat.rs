@@ -9,7 +9,7 @@ use crate::ui::components;
 ///
 /// Layout:
 /// - If sidebar visible: horizontal split  sidebar(25%) | main(75%)
-/// - Main area: vertical split  messages(stretch) | editor(4 lines) | status(1 line)
+/// - Main area: vertical split  messages(stretch) | [thinking(1)] | editor | status(1)
 pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
     let main_area = if app.sidebar_visible {
         let horiz = Layout::default()
@@ -23,17 +23,24 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
         area
     };
 
+    let is_busy = app.is_session_busy();
+    let thinking_h: u16 = if is_busy { 1 } else { 0 };
     let editor_h = app.editor_height();
+
     let vert = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Min(1),              // messages (stretches)
-            Constraint::Length(editor_h),     // editor (auto-expands with typed newlines)
-            Constraint::Length(1),            // status bar
+            Constraint::Min(1),                  // messages (stretches)
+            Constraint::Length(thinking_h),       // thinking indicator (0 when idle)
+            Constraint::Length(editor_h),         // editor
+            Constraint::Length(1),                // status bar
         ])
         .split(main_area);
 
     components::message_list::render(frame, app, vert[0]);
-    components::editor::render(frame, app, vert[1]);
-    components::status_bar::render(frame, app, vert[2]);
+    if is_busy {
+        components::thinking_bar::render(frame, &app.theme_name, vert[1]);
+    }
+    components::editor::render(frame, app, vert[2]);
+    components::status_bar::render(frame, app, vert[3]);
 }

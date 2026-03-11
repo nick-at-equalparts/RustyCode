@@ -365,19 +365,22 @@ impl App {
     }
 
     /// Apply the full-history backfill, preserving the user's scroll position.
+    ///
+    /// `message_scroll` is an offset from the **bottom** (0 = pinned to the
+    /// newest message).  Prepending older history above the viewport doesn't
+    /// change the user's distance from the bottom, so we leave the scroll
+    /// value untouched.
     pub fn apply_backfill(&mut self, result: BackfillResult) {
         match result {
             Ok(all_messages) => {
-                // The user is looking at the newest messages (from the initial load).
-                // Prepend the older history so the scroll position stays stable.
                 let old_len = self.messages.len();
                 self.messages = all_messages;
                 let new_len = self.messages.len();
-                // Shift scroll to compensate for prepended messages
                 let prepended = new_len.saturating_sub(old_len);
-                self.message_scroll += prepended;
+                // No scroll adjustment needed — message_scroll is offset from
+                // the bottom, so prepending messages above is invisible.
                 tracing::debug!(
-                    "Backfill applied: {} → {} messages, scroll adjusted by {}",
+                    "Backfill applied: {} → {} messages ({} prepended)",
                     old_len, new_len, prepended
                 );
             }
@@ -899,11 +902,11 @@ impl App {
     // ── Scrolling ───────────────────────────────────────────────────
 
     pub fn scroll_up(&mut self) {
-        self.message_scroll = self.message_scroll.saturating_add(1);
+        self.message_scroll = self.message_scroll.saturating_add(3);
     }
 
     pub fn scroll_down(&mut self) {
-        self.message_scroll = self.message_scroll.saturating_sub(1);
+        self.message_scroll = self.message_scroll.saturating_sub(3);
     }
 
     /// Desired editor height: visual lines + 2 for borders, capped at 12.

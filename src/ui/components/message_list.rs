@@ -112,40 +112,34 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect) {
         }
     }
 
-    // Busy indicator
-    if app.is_session_busy() {
-        all_lines.push(Line::default());
-        all_lines.push(Line::from(Span::styled(
-            "   Thinking...",
-            Style::default()
-                .fg(theme.accent)
-                .add_modifier(Modifier::ITALIC),
-        )));
-    }
-
     // ---- Scrolling ----
-    // Compute the total wrapped height so we can pin to the bottom.
-    // Each Line may wrap to ceil(line_width / area_width) visual rows.
-    let view_width = area.width.max(1) as usize;
-    let total_visual_rows: usize = all_lines
-        .iter()
-        .map(|line| {
-            let w = line.width();
-            if w == 0 { 1 } else { (w + view_width - 1) / view_width }
-        })
-        .sum();
+    let view_width = area.width.max(1);
     let visible_height = area.height as usize;
 
-    // message_scroll is an offset from the bottom (0 = fully scrolled down).
-    // Convert to a top-down row offset for Paragraph::scroll().
+    // Performance: for large sessions, only keep lines near the viewport.
+    // Ratatui layouts ALL lines even with .scroll(), so trimming from the top
+    // avoids expensive word-wrap computation on thousands of off-screen lines.
+    // Use a generous budget so scrolling up still works smoothly.
+    let lines_budget = visible_height * 5 + app.message_scroll * 3 + 100;
+    let skip = all_lines.len().saturating_sub(lines_budget);
+    if skip > 0 {
+        all_lines.drain(..skip);
+    }
+
+    // Use Paragraph::line_count() for the exact wrapped height.
+    // Our old ceil(width/view_width) estimate was wrong because Ratatui's
+    // word-wrapper breaks at word boundaries, producing more visual rows
+    // than a simple character-width estimate. The error accumulated across
+    // hundreds of lines and left the user stranded at the top.
+    let paragraph = Paragraph::new(Text::from(all_lines))
+        .style(Style::default().bg(theme.bg).fg(theme.fg))
+        .wrap(Wrap { trim: false });
+
+    let total_visual_rows = paragraph.line_count(view_width);
     let max_scroll = total_visual_rows.saturating_sub(visible_height);
     let scroll_from_top = max_scroll.saturating_sub(app.message_scroll);
 
-    let paragraph = Paragraph::new(Text::from(all_lines))
-        .style(Style::default().bg(theme.bg).fg(theme.fg))
-        .wrap(Wrap { trim: false })
-        .scroll((scroll_from_top as u16, 0));
-
+    let paragraph = paragraph.scroll((scroll_from_top as u16, 0));
     frame.render_widget(paragraph, area);
 
     // Scroll indicator when not at bottom

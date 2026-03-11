@@ -807,25 +807,25 @@ fn test_scroll_up() {
     assert_eq!(app.message_scroll, 0);
 
     app.scroll_up();
-    assert_eq!(app.message_scroll, 1);
+    assert_eq!(app.message_scroll, 3);
 
     app.scroll_up();
-    assert_eq!(app.message_scroll, 2);
+    assert_eq!(app.message_scroll, 6);
 }
 
 #[test]
 fn test_scroll_down() {
     let mut app = test_app();
-    app.message_scroll = 5;
+    app.message_scroll = 10;
 
     app.scroll_down();
-    assert_eq!(app.message_scroll, 4);
+    assert_eq!(app.message_scroll, 7);
 }
 
 #[test]
 fn test_scroll_down_saturates_at_zero() {
     let mut app = test_app();
-    app.message_scroll = 0;
+    app.message_scroll = 1;
 
     app.scroll_down();
     assert_eq!(app.message_scroll, 0);
@@ -1099,8 +1099,9 @@ fn test_apply_backfill_replaces_messages_and_adjusts_scroll() {
     app.apply_backfill(Ok(all_messages));
 
     assert_eq!(app.messages.len(), 10);
-    // Scroll should be shifted by 7 (10 - 3 = 7 prepended)
-    assert_eq!(app.message_scroll, 7);
+    // message_scroll is offset from the bottom — prepending older history
+    // above the viewport doesn't change the user's distance from the bottom.
+    assert_eq!(app.message_scroll, 0);
 }
 
 #[test]

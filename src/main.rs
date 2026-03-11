@@ -87,6 +87,11 @@ async fn main() -> Result<()> {
         .or(config.theme)
         .unwrap_or_else(|| "default".to_string());
 
+    // Restore saved model selection (validated against providers during load_initial_data)
+    if let Some(model) = config.model {
+        app.current_model = Some(model);
+    }
+
     // Data loading happens inside the event loop, after the first render,
     // so the TUI appears instantly.
 

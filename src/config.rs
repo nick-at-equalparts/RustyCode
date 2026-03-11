@@ -7,6 +7,9 @@ use std::path::PathBuf;
 pub struct Config {
     #[serde(default)]
     pub theme: Option<String>,
+    /// Saved model selection: (provider_id, model_id).
+    #[serde(default)]
+    pub model: Option<(String, String)>,
 }
 
 impl Config {
