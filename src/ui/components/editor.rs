@@ -2,7 +2,7 @@ use ratatui::prelude::*;
 use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph};
 use ratatui::Frame;
 
-use crate::app::state::App;
+use crate::app::state::{App, ChatMode};
 use crate::ui::themes::get_theme;
 
 /// Render the text input editor inside `area`.
@@ -11,7 +11,13 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect) {
     let is_busy = app.is_session_busy();
 
     let border_color = if is_busy { theme.warning } else { theme.border };
-    let title = if is_busy { " Abort (Ctrl+C) " } else { " > " };
+    let title = if is_busy {
+        " Abort (Ctrl+C) ".to_string()
+    } else if app.chat_mode == ChatMode::Build {
+        " > ".to_string()
+    } else {
+        format!(" {} > ", app.chat_mode.label())
+    };
 
     let block = Block::default()
         .title(title)

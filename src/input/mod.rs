@@ -43,9 +43,9 @@ pub fn handle_key_event(app: &mut App, key: KeyEvent) -> Action {
 
     // ── Global keybindings ──────────────────────────────────────────
     match (key.modifiers, key.code) {
-        // Ctrl+C  => abort if busy, otherwise clear input
+        // Ctrl+C  => abort if busy and input is empty, otherwise clear input
         (KeyModifiers::CONTROL, KeyCode::Char('c')) => {
-            if app.is_session_busy() {
+            if app.is_session_busy() && app.input_text.is_empty() {
                 return Action::AbortSession;
             }
             app.input_text.clear();
@@ -267,6 +267,12 @@ fn handle_chat_key(app: &mut App, key: KeyEvent) -> Action {
         }
         KeyCode::End => {
             app.move_cursor_end();
+            Action::None
+        }
+
+        // Tab => toggle between Build and Plan mode
+        KeyCode::Tab | KeyCode::BackTab => {
+            app.chat_mode = app.chat_mode.toggle();
             Action::None
         }
 

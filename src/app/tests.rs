@@ -1,5 +1,5 @@
 use crate::api::ApiClient;
-use crate::app::state::{App, Dialog, Page};
+use crate::app::state::{App, ChatMode, Dialog, Page};
 use crate::types::{
     Event, MessagePartDeltaProps, MessageUpdatedProps, MessageWithParts, PartUpdatedProps,
     PermissionAskedProps, PermissionRepliedProps, SessionIdProps, SessionInfoProps,
@@ -1524,4 +1524,72 @@ fn test_handle_paste_appends_to_existing_input() {
     crate::input::handle_paste(&mut app, "pasted");
 
     assert_eq!(app.input_text, "prefix pasted");
+}
+
+// ── ChatMode tests ─────────────────────────────────────────────────────
+
+#[test]
+fn test_chat_mode_toggle() {
+    assert_eq!(ChatMode::Build.toggle(), ChatMode::Plan);
+    assert_eq!(ChatMode::Plan.toggle(), ChatMode::Build);
+}
+
+#[test]
+fn test_chat_mode_label() {
+    assert_eq!(ChatMode::Build.label(), "Build");
+    assert_eq!(ChatMode::Plan.label(), "Plan");
+}
+
+#[test]
+fn test_chat_mode_variant() {
+    assert_eq!(ChatMode::Build.variant(), None);
+    assert_eq!(ChatMode::Plan.variant(), Some("plan"));
+}
+
+#[test]
+fn test_initial_chat_mode_is_build() {
+    let app = test_app();
+    assert_eq!(app.chat_mode, ChatMode::Build);
+}
+
+#[test]
+fn test_tab_toggles_chat_mode() {
+    let mut app = test_app();
+    assert_eq!(app.chat_mode, ChatMode::Build);
+
+    let tab_key = make_key(KeyCode::Tab);
+    let action = crate::input::handle_key_event(&mut app, tab_key);
+    assert!(matches!(action, crate::input::Action::None));
+    assert_eq!(app.chat_mode, ChatMode::Plan);
+
+    let action2 = crate::input::handle_key_event(&mut app, tab_key);
+    assert!(matches!(action2, crate::input::Action::None));
+    assert_eq!(app.chat_mode, ChatMode::Build);
+}
+
+#[test]
+fn test_ctrl_c_clears_input_when_busy_with_text() {
+    let mut app = test_app();
+    app.is_busy = true;
+    app.input_text = "some text".to_string();
+    app.input_cursor = 9;
+
+    let ctrl_c = make_ctrl_key('c');
+    let action = crate::input::handle_key_event(&mut app, ctrl_c);
+
+    // Should clear input, NOT abort, because input is not empty
+    assert!(matches!(action, crate::input::Action::None));
+    assert!(app.input_text.is_empty());
+}
+
+#[test]
+fn test_ctrl_c_aborts_when_busy_and_input_empty() {
+    let mut app = test_app();
+    app.is_busy = true;
+    app.input_text.clear();
+
+    let ctrl_c = make_ctrl_key('c');
+    let action = crate::input::handle_key_event(&mut app, ctrl_c);
+
+    assert!(matches!(action, crate::input::Action::AbortSession));
 }

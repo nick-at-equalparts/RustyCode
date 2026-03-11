@@ -32,6 +32,36 @@ pub enum Page {
     Logs,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChatMode {
+    Build,
+    Plan,
+}
+
+impl ChatMode {
+    pub fn label(self) -> &'static str {
+        match self {
+            ChatMode::Build => "Build",
+            ChatMode::Plan => "Plan",
+        }
+    }
+
+    pub fn toggle(self) -> Self {
+        match self {
+            ChatMode::Build => ChatMode::Plan,
+            ChatMode::Plan => ChatMode::Build,
+        }
+    }
+
+    /// Returns the variant string sent to the API.
+    pub fn variant(self) -> Option<&'static str> {
+        match self {
+            ChatMode::Build => None,        // default — no variant needed
+            ChatMode::Plan => Some("plan"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Dialog {
     Sessions,
@@ -79,6 +109,7 @@ pub struct App {
 
     // UI State
     pub active_page: Page,
+    pub chat_mode: ChatMode,
     pub active_dialog: Option<Dialog>,
     pub input_text: String,
     pub input_cursor: usize,
@@ -142,6 +173,7 @@ impl App {
             pending_questions: Vec::new(),
 
             active_page: Page::Chat,
+            chat_mode: ChatMode::Build,
             active_dialog: None,
             input_text: String::new(),
             input_cursor: 0,
@@ -420,7 +452,7 @@ impl App {
             agent,
             no_reply: None,
             system: None,
-            variant: None,
+            variant: self.chat_mode.variant().map(String::from),
             format: None,
         };
 
@@ -434,6 +466,7 @@ impl App {
         self.typed_visual_lines = 1;
         self.paste_line_count = None;
         self.is_busy = true;
+        self.message_scroll = 0; // Auto-scroll to bottom so "Thinking..." is visible
 
         Ok(())
     }
