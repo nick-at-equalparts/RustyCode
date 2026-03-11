@@ -124,17 +124,27 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect) {
     }
 
     // ---- Scrolling ----
-    // message_scroll is an offset from the bottom (0 = fully scrolled down).
+    // Compute the total wrapped height so we can pin to the bottom.
+    // Each Line may wrap to ceil(line_width / area_width) visual rows.
+    let view_width = area.width.max(1) as usize;
+    let total_visual_rows: usize = all_lines
+        .iter()
+        .map(|line| {
+            let w = line.width();
+            if w == 0 { 1 } else { (w + view_width - 1) / view_width }
+        })
+        .sum();
     let visible_height = area.height as usize;
-    let total = all_lines.len();
 
-    let end = total.saturating_sub(app.message_scroll);
-    let start = end.saturating_sub(visible_height);
-    let visible: Vec<Line> = all_lines[start..end].to_vec();
+    // message_scroll is an offset from the bottom (0 = fully scrolled down).
+    // Convert to a top-down row offset for Paragraph::scroll().
+    let max_scroll = total_visual_rows.saturating_sub(visible_height);
+    let scroll_from_top = max_scroll.saturating_sub(app.message_scroll);
 
-    let paragraph = Paragraph::new(Text::from(visible))
+    let paragraph = Paragraph::new(Text::from(all_lines))
         .style(Style::default().bg(theme.bg).fg(theme.fg))
-        .wrap(Wrap { trim: false });
+        .wrap(Wrap { trim: false })
+        .scroll((scroll_from_top as u16, 0));
 
     frame.render_widget(paragraph, area);
 
