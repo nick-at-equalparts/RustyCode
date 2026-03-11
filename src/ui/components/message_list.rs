@@ -78,7 +78,7 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect) {
 
                 // Render each part
                 for part in &msg_with_parts.parts {
-                    render_part(part, &mut all_lines, theme);
+                    render_part(part, &mut all_lines, theme, app.tick_count);
                 }
 
                 // Cost / tokens footer
@@ -160,11 +160,148 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect) {
     }
 }
 
+/// Spinner frames used for running tasks (cycles every 250ms tick).
+const SPINNER_FRAMES: &[char] = &['◐', '◑', '◒', '◓'];
+
+/// Build a box top-border line: `   ┌ ◐ title ─────────────`
+fn box_top<'a>(icon: &str, title: &str, color: Color) -> Line<'a> {
+    let fill_len = 40usize.saturating_sub(title.len() + icon.len() + 5);
+    let fill: String = "─".repeat(fill_len);
+    Line::from(vec![
+        Span::styled("   ┌ ", Style::default().fg(color)),
+        Span::styled(
+            format!("{} ", icon),
+            Style::default().fg(color).add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            title.to_string(),
+            Style::default().fg(color).add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(format!(" {}", fill), Style::default().fg(color)),
+    ])
+}
+
+/// Build a box content line: `   │  text`
+fn box_content<'a>(text: String, color: Color, text_color: Color) -> Line<'a> {
+    Line::from(vec![
+        Span::styled("   │  ", Style::default().fg(color)),
+        Span::styled(text, Style::default().fg(text_color)),
+    ])
+}
+
+/// Build a box bottom-border line: `   └──────────────────────`
+fn box_bottom<'a>(color: Color) -> Line<'a> {
+    Line::from(Span::styled(
+        format!("   └{}", "─".repeat(40)),
+        Style::default().fg(color),
+    ))
+}
+
+/// Render a "task" tool call (sub-agent invocation) with a bordered box.
+fn render_task_tool<'a>(
+    tp: &'a crate::types::ToolPart,
+    input: Option<&'a serde_json::Value>,
+    lines: &mut Vec<Line<'a>>,
+    theme: &'static Theme,
+    tick_count: usize,
+) {
+    let is_done = matches!(tp.state, ToolState::Completed { .. });
+    let is_error = matches!(tp.state, ToolState::Error { .. });
+
+    let (icon, color) = if is_error {
+        ("✗".to_string(), theme.tool_error)
+    } else if is_done {
+        ("✓".to_string(), theme.tool_complete)
+    } else {
+        let spinner = SPINNER_FRAMES[tick_count % SPINNER_FRAMES.len()];
+        (format!("{}", spinner), theme.accent)
+    };
+
+    // Try to extract a human-readable description from the input
+    let description = input
+        .and_then(|v| {
+            v.get("description")
+                .or_else(|| v.get("input"))
+                .or_else(|| v.get("command"))
+                .or_else(|| v.get("prompt"))
+        })
+        .and_then(|v| v.as_str());
+
+    let title = description.unwrap_or("Task");
+    let title_preview = if title.len() > 50 {
+        format!("{}...", &title[..47])
+    } else {
+        title.to_string()
+    };
+
+    lines.push(box_top(&icon, &title_preview, color));
+
+    // Show task_id on the content line if available
+    let task_id = input
+        .and_then(|v| v.get("task_id"))
+        .and_then(|v| v.as_str());
+    if let Some(tid) = task_id {
+        let id_preview = if tid.len() > 60 {
+            format!("{}...", &tid[..57])
+        } else {
+            tid.to_string()
+        };
+        lines.push(box_content(id_preview, color, theme.muted));
+    }
+
+    // Show summary/output on completion
+    if let ToolState::Completed { output, title, .. } = &tp.state {
+        if let Some(t) = title {
+            let preview = if t.len() > 60 {
+                format!("{}...", &t[..57])
+            } else {
+                t.clone()
+            };
+            lines.push(box_content(preview, color, theme.muted));
+        }
+        if let Some(out) = output {
+            // Show first 3 lines of output
+            for (i, line) in out.lines().enumerate() {
+                if i >= 3 {
+                    lines.push(box_content(
+                        "... (truncated)".to_string(),
+                        color,
+                        theme.muted,
+                    ));
+                    break;
+                }
+                let preview = if line.len() > 60 {
+                    format!("{}...", &line[..57])
+                } else {
+                    line.to_string()
+                };
+                lines.push(box_content(preview, color, theme.muted));
+            }
+        }
+    }
+
+    // Show error
+    if let ToolState::Error {
+        error: Some(err), ..
+    } = &tp.state
+    {
+        let preview = if err.len() > 60 {
+            format!("{}...", &err[..57])
+        } else {
+            err.clone()
+        };
+        lines.push(box_content(preview, color, theme.tool_error));
+    }
+
+    lines.push(box_bottom(color));
+}
+
 /// Convert a single Part into styled lines.
 fn render_part<'a>(
     part: &'a Part,
     lines: &mut Vec<Line<'a>>,
     theme: &'static crate::ui::themes::Theme,
+    tick_count: usize,
 ) {
     match part {
         Part::Text(tp) => {
@@ -182,6 +319,12 @@ fn render_part<'a>(
                 | ToolState::Completed { input, .. }
                 | ToolState::Error { input, .. } => input.as_ref(),
             };
+
+            // Sub-agent tasks (tool == "task") get special box rendering
+            if name == "task" {
+                render_task_tool(tp, input, lines, theme, tick_count);
+                return;
+            }
 
             // Get command string from input (e.g. bash command, file path, etc.)
             let command = input
@@ -302,10 +445,18 @@ fn render_part<'a>(
         }
         Part::StepStart(sp) => {
             if let Some(ref title) = sp.title {
-                lines.push(Line::from(Span::styled(
-                    format!("   -- {} --", title),
-                    Style::default().fg(theme.muted),
-                )));
+                let fill_len = 40usize.saturating_sub(title.len() + 5);
+                let fill: String = "─".repeat(fill_len);
+                lines.push(Line::from(vec![
+                    Span::styled("   ── ", Style::default().fg(theme.muted)),
+                    Span::styled(
+                        title.to_string(),
+                        Style::default()
+                            .fg(theme.muted)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(format!(" {}", fill), Style::default().fg(theme.muted)),
+                ]));
             }
         }
         Part::StepFinish(_) => {
@@ -313,27 +464,47 @@ fn render_part<'a>(
         }
         Part::Agent(ap) => {
             let agent_name = ap.agent.as_deref().unwrap_or("subagent");
-            lines.push(Line::from(vec![
-                Span::styled(
-                    "   [..] ",
-                    Style::default()
-                        .fg(theme.tool_running)
-                        .add_modifier(Modifier::BOLD),
-                ),
-                Span::styled(
-                    format!("Running agent: {}", agent_name),
-                    Style::default()
-                        .fg(theme.tool_running)
-                        .add_modifier(Modifier::ITALIC),
-                ),
-            ]));
+            let spinner = SPINNER_FRAMES[tick_count % SPINNER_FRAMES.len()];
+            let icon = format!("{}", spinner);
+            let color = theme.accent;
+            lines.push(box_top(&icon, agent_name, color));
+            lines.push(box_bottom(color));
+        }
+        Part::Subtask(sp) => {
+            let has_summary = sp.summary.is_some();
+            let (icon, color) = if has_summary {
+                ("✓".to_string(), theme.tool_complete)
+            } else {
+                let spinner = SPINNER_FRAMES[tick_count % SPINNER_FRAMES.len()];
+                (format!("{}", spinner), theme.accent)
+            };
+
+            lines.push(box_top(&icon, "Task", color));
+
+            // Show input description if available
+            if let Some(ref input) = sp.input {
+                let preview = if input.len() > 70 {
+                    format!("{}...", &input[..67])
+                } else {
+                    input.clone()
+                };
+                lines.push(box_content(preview, color, theme.fg));
+            }
+
+            // Show summary on completion
+            if let Some(ref summary) = sp.summary {
+                let preview = if summary.len() > 70 {
+                    format!("{}...", &summary[..67])
+                } else {
+                    summary.clone()
+                };
+                lines.push(box_content(preview, color, theme.muted));
+            }
+
+            lines.push(box_bottom(color));
         }
         // Other part variants are rendered minimally
-        Part::Snapshot(_)
-        | Part::Patch(_)
-        | Part::Retry(_)
-        | Part::Compaction(_)
-        | Part::Subtask(_) => {}
+        Part::Snapshot(_) | Part::Patch(_) | Part::Retry(_) | Part::Compaction(_) => {}
     }
 }
 

@@ -104,6 +104,10 @@ pub struct App {
     pub pending_permissions: Vec<PermissionRequest>,
     pub pending_questions: Vec<QuestionRequest>,
 
+    // Child session IDs — sub-agent sessions whose parent_id matches our
+    // current session.  Used to accept permission/question events from them.
+    pub child_session_ids: std::collections::HashSet<String>,
+
     // UI State
     pub active_page: Page,
     pub chat_mode: ChatMode,
@@ -126,6 +130,9 @@ pub struct App {
 
     // Theme
     pub theme_name: String,
+
+    // Tick counter — incremented every 250ms, used for spinner animations.
+    pub tick_count: usize,
 
     // Editor sizing — visual line count from typed input (not paste)
     pub typed_visual_lines: u16,
@@ -168,6 +175,7 @@ impl App {
 
             pending_permissions: Vec::new(),
             pending_questions: Vec::new(),
+            child_session_ids: std::collections::HashSet::new(),
 
             active_page: Page::Chat,
             chat_mode: ChatMode::Build,
@@ -187,6 +195,8 @@ impl App {
             is_busy: false,
 
             theme_name: "default".to_string(),
+
+            tick_count: 0,
 
             typed_visual_lines: 1,
             last_terminal_width: 80,
@@ -277,6 +287,9 @@ impl App {
         self.messages.clear();
         self.message_scroll = 0;
         self.todos.clear();
+        self.child_session_ids.clear();
+        self.pending_permissions.clear();
+        self.pending_questions.clear();
         self.status_message = "Loading session…".to_string();
 
         // Spawn background fetch: grab the last INITIAL_MESSAGE_LIMIT messages
@@ -484,6 +497,20 @@ impl App {
             // ── Session lifecycle ────────────────────────────────────
             Event::SessionCreated { properties } => {
                 let session = properties.info;
+                // Track child sessions (sub-agents) so we accept their
+                // permission/question events.
+                if let Some(ref parent_id) = session.parent_id {
+                    if let Some(current) = &self.current_session {
+                        if current.id == *parent_id {
+                            tracing::debug!(
+                                "Tracking child session {} (parent {})",
+                                session.id,
+                                parent_id
+                            );
+                            self.child_session_ids.insert(session.id.clone());
+                        }
+                    }
+                }
                 if !self.sessions.iter().any(|s| s.id == session.id) {
                     self.sessions.insert(0, session);
                 }
@@ -596,7 +623,15 @@ impl App {
             Event::PermissionAsked { properties } => {
                 let request = properties.request;
                 if let Some(current) = &self.current_session {
-                    if current.id == request.session_id {
+                    let is_current = current.id == request.session_id;
+                    let is_child = self.child_session_ids.contains(&request.session_id);
+                    if is_current || is_child {
+                        if is_child {
+                            tracing::debug!(
+                                "Accepting permission from child session {}",
+                                request.session_id
+                            );
+                        }
                         self.pending_permissions.push(request);
                         if self.active_dialog.is_none() {
                             self.active_dialog = Some(Dialog::Permission);
@@ -617,8 +652,24 @@ impl App {
             // ── Questions ───────────────────────────────────────────
             Event::QuestionAsked { properties } => {
                 let question = properties.question;
+                tracing::debug!(
+                    "QuestionAsked: session={}, q_id={}, text={:?}, options={:?}, current_session={:?}",
+                    question.session_id,
+                    question.id,
+                    &question.question[..question.question.len().min(80)],
+                    question.options.as_ref().map(|o| o.len()),
+                    self.current_session.as_ref().map(|s| &s.id),
+                );
                 if let Some(current) = &self.current_session {
-                    if current.id == question.session_id {
+                    let is_current = current.id == question.session_id;
+                    let is_child = self.child_session_ids.contains(&question.session_id);
+                    if is_current || is_child {
+                        if is_child {
+                            tracing::debug!(
+                                "Accepting question from child session {}",
+                                question.session_id
+                            );
+                        }
                         // Wrap the QuestionInfo into a QuestionRequest
                         let qr = QuestionRequest {
                             id: question.id,
@@ -629,9 +680,23 @@ impl App {
                         };
                         self.pending_questions.push(qr);
                         if self.active_dialog.is_none() {
+                            tracing::debug!("Opening Question dialog");
                             self.active_dialog = Some(Dialog::Question);
+                        } else {
+                            tracing::debug!(
+                                "Question queued — another dialog is active: {:?}",
+                                self.active_dialog
+                            );
                         }
+                    } else {
+                        tracing::debug!(
+                            "QuestionAsked ignored: session mismatch (got {}, current {})",
+                            question.session_id,
+                            current.id
+                        );
                     }
+                } else {
+                    tracing::debug!("QuestionAsked ignored: no current session");
                 }
             }
             Event::QuestionReplied { .. } | Event::QuestionRejected { .. } => {

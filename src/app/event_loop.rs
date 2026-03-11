@@ -319,6 +319,8 @@ pub async fn run(app: &mut App) -> Result<()> {
 
             // Tick timer for periodic UI updates
             _ = tick.tick() => {
+                // Advance frame counter (used for spinner animations)
+                app.tick_count = app.tick_count.wrapping_add(1);
                 // Clear stale toasts
                 app.tick_toast();
                 // Periodic redraw
