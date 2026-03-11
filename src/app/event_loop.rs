@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use crossterm::{
     event::{
         DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
-        EventStream, Event as CrosstermEvent, KeyCode, KeyEventKind, KeyModifiers,
+        Event as CrosstermEvent, EventStream, KeyCode, KeyEventKind, KeyModifiers,
     },
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
@@ -118,8 +118,13 @@ pub async fn run(app: &mut App) -> Result<()> {
     // ── Terminal setup ──────────────────────────────────────────────
     enable_raw_mode().context("Failed to enable raw mode")?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture, EnableBracketedPaste)
-        .context("Failed to enter alternate screen")?;
+    execute!(
+        stdout,
+        EnterAlternateScreen,
+        EnableMouseCapture,
+        EnableBracketedPaste
+    )
+    .context("Failed to enter alternate screen")?;
 
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend).context("Failed to create terminal")?;
@@ -147,7 +152,10 @@ pub async fn run(app: &mut App) -> Result<()> {
     let mut sse_stream = match sse_result {
         Ok(stream) => Some(stream),
         Err(e) => {
-            tracing::warn!("Failed to connect to SSE stream: {}. Continuing without live events.", e);
+            tracing::warn!(
+                "Failed to connect to SSE stream: {}. Continuing without live events.",
+                e
+            );
             app.status_message = "No live event connection".to_string();
             None
         }

@@ -5,9 +5,9 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
 use crate::types::{
-    Agent, Command, FileContent, FileDiff, FileNode, FormatterStatus, LSPStatus,
-    MessageWithParts, Path, PermissionRequest, Project, ProviderListResponse, Pty,
-    QuestionRequest, Session, SessionStatus, Todo,
+    Agent, Command, FileContent, FileDiff, FileNode, FormatterStatus, LSPStatus, MessageWithParts,
+    Path, PermissionRequest, Project, ProviderListResponse, Pty, QuestionRequest, Session,
+    SessionStatus, Todo,
 };
 
 // ---------------------------------------------------------------------------
@@ -266,8 +266,7 @@ impl ApiClient {
             .send()
             .await
             .context("GET /project")?;
-        resp.error_for_status_ref()
-            .context("GET /project status")?;
+        resp.error_for_status_ref().context("GET /project status")?;
         resp.json().await.context("parse list_projects response")
     }
 
@@ -316,16 +315,12 @@ impl ApiClient {
             .send()
             .await
             .context("GET /config")?;
-        resp.error_for_status_ref()
-            .context("GET /config status")?;
+        resp.error_for_status_ref().context("GET /config status")?;
         resp.json().await.context("parse get_config response")
     }
 
     /// `PATCH /config`
-    pub async fn update_config(
-        &self,
-        config: &serde_json::Value,
-    ) -> Result<serde_json::Value> {
+    pub async fn update_config(&self, config: &serde_json::Value) -> Result<serde_json::Value> {
         let resp = self
             .client
             .patch(self.url("/config"))
@@ -386,34 +381,23 @@ impl ApiClient {
     }
 
     /// `POST /provider/{providerID}/oauth/authorize`
-    pub async fn oauth_authorize(
-        &self,
-        provider_id: &str,
-    ) -> Result<serde_json::Value> {
+    pub async fn oauth_authorize(&self, provider_id: &str) -> Result<serde_json::Value> {
         let resp = self
             .client
-            .post(self.url(&format!(
-                "/provider/{}/oauth/authorize",
-                provider_id
-            )))
+            .post(self.url(&format!("/provider/{}/oauth/authorize", provider_id)))
             .send()
             .await
             .context("POST /provider/{id}/oauth/authorize")?;
         resp.error_for_status_ref()
             .context("POST /provider/{id}/oauth/authorize status")?;
-        resp.json()
-            .await
-            .context("parse oauth_authorize response")
+        resp.json().await.context("parse oauth_authorize response")
     }
 
     /// `POST /provider/{providerID}/oauth/callback`
     pub async fn oauth_callback(&self, provider_id: &str) -> Result<bool> {
         let resp = self
             .client
-            .post(self.url(&format!(
-                "/provider/{}/oauth/callback",
-                provider_id
-            )))
+            .post(self.url(&format!("/provider/{}/oauth/callback", provider_id)))
             .send()
             .await
             .context("POST /provider/{id}/oauth/callback")?;
@@ -433,8 +417,7 @@ impl ApiClient {
             req = req.query(&[("projectID", pid)]);
         }
         let resp = req.send().await.context("GET /session")?;
-        resp.error_for_status_ref()
-            .context("GET /session status")?;
+        resp.error_for_status_ref().context("GET /session status")?;
         resp.json().await.context("parse list_sessions response")
     }
 
@@ -464,9 +447,7 @@ impl ApiClient {
     }
 
     /// `GET /session/status`
-    pub async fn get_session_statuses(
-        &self,
-    ) -> Result<HashMap<String, SessionStatus>> {
+    pub async fn get_session_statuses(&self) -> Result<HashMap<String, SessionStatus>> {
         let resp = self
             .client
             .get(self.url("/session/status"))
@@ -507,11 +488,7 @@ impl ApiClient {
     }
 
     /// `PATCH /session/{sessionID}`
-    pub async fn update_session(
-        &self,
-        id: &str,
-        title: Option<&str>,
-    ) -> Result<Session> {
+    pub async fn update_session(&self, id: &str, title: Option<&str>) -> Result<Session> {
         let mut body = serde_json::Map::new();
         if let Some(t) = title {
             body.insert("title".into(), serde_json::Value::String(t.into()));
@@ -584,17 +561,10 @@ impl ApiClient {
     }
 
     /// `POST /session/{sessionID}/fork`
-    pub async fn fork_session(
-        &self,
-        id: &str,
-        message_id: Option<&str>,
-    ) -> Result<Session> {
+    pub async fn fork_session(&self, id: &str, message_id: Option<&str>) -> Result<Session> {
         let mut body = serde_json::Map::new();
         if let Some(mid) = message_id {
-            body.insert(
-                "messageID".into(),
-                serde_json::Value::String(mid.into()),
-            );
+            body.insert("messageID".into(), serde_json::Value::String(mid.into()));
         }
         let resp = self
             .client
@@ -653,18 +623,14 @@ impl ApiClient {
         id: &str,
         message_id: Option<&str>,
     ) -> Result<Vec<FileDiff>> {
-        let mut req = self
-            .client
-            .get(self.url(&format!("/session/{}/diff", id)));
+        let mut req = self.client.get(self.url(&format!("/session/{}/diff", id)));
         if let Some(mid) = message_id {
             req = req.query(&[("messageID", mid)]);
         }
         let resp = req.send().await.context("GET /session/{sessionID}/diff")?;
         resp.error_for_status_ref()
             .context("GET /session/{sessionID}/diff status")?;
-        resp.json()
-            .await
-            .context("parse get_session_diff response")
+        resp.json().await.context("parse get_session_diff response")
     }
 
     /// `POST /session/{sessionID}/summarize`
@@ -705,10 +671,7 @@ impl ApiClient {
             serde_json::Value::String(message_id.into()),
         );
         if let Some(pid) = part_id {
-            body.insert(
-                "partID".into(),
-                serde_json::Value::String(pid.into()),
-            );
+            body.insert("partID".into(), serde_json::Value::String(pid.into()));
         }
         let resp = self
             .client
@@ -720,8 +683,7 @@ impl ApiClient {
         resp.error_for_status_ref()
             .context("POST /session/{sessionID}/revert status")?;
         // Server returns Session on success; we convert to bool.
-        let _: serde_json::Value =
-            resp.json().await.context("parse revert response")?;
+        let _: serde_json::Value = resp.json().await.context("parse revert response")?;
         Ok(true)
     }
 
@@ -735,8 +697,7 @@ impl ApiClient {
             .context("POST /session/{sessionID}/unrevert")?;
         resp.error_for_status_ref()
             .context("POST /session/{sessionID}/unrevert status")?;
-        let _: serde_json::Value =
-            resp.json().await.context("parse unrevert response")?;
+        let _: serde_json::Value = resp.json().await.context("parse unrevert response")?;
         Ok(true)
     }
 
@@ -759,12 +720,9 @@ impl ApiClient {
             .send()
             .await
             .context("POST /session/{sessionID}/permissions/{permissionID}")?;
-        resp.error_for_status_ref().context(
-            "POST /session/{sessionID}/permissions/{permissionID} status",
-        )?;
-        resp.json()
-            .await
-            .context("parse reply_permission response")
+        resp.error_for_status_ref()
+            .context("POST /session/{sessionID}/permissions/{permissionID} status")?;
+        resp.json().await.context("parse reply_permission response")
     }
 
     // =======================================================================
@@ -819,10 +777,7 @@ impl ApiClient {
     ) -> Result<MessageWithParts> {
         let resp = self
             .client
-            .get(self.url(&format!(
-                "/session/{}/message/{}",
-                session_id, message_id
-            )))
+            .get(self.url(&format!("/session/{}/message/{}", session_id, message_id)))
             .send()
             .await
             .context("GET /session/{sessionID}/message/{messageID}")?;
@@ -832,25 +787,16 @@ impl ApiClient {
     }
 
     /// `DELETE /session/{sessionID}/message/{messageID}`
-    pub async fn delete_message(
-        &self,
-        session_id: &str,
-        message_id: &str,
-    ) -> Result<bool> {
+    pub async fn delete_message(&self, session_id: &str, message_id: &str) -> Result<bool> {
         let resp = self
             .client
-            .delete(self.url(&format!(
-                "/session/{}/message/{}",
-                session_id, message_id
-            )))
+            .delete(self.url(&format!("/session/{}/message/{}", session_id, message_id)))
             .send()
             .await
             .context("DELETE /session/{sessionID}/message/{messageID}")?;
         resp.error_for_status_ref()
             .context("DELETE /session/{sessionID}/message/{messageID} status")?;
-        resp.json()
-            .await
-            .context("parse delete_message response")
+        resp.json().await.context("parse delete_message response")
     }
 
     /// `DELETE /session/{sessionID}/message/{messageID}/part/{partID}`
@@ -909,10 +855,7 @@ impl ApiClient {
     ) -> Result<()> {
         let resp = self
             .client
-            .post(self.url(&format!(
-                "/session/{}/prompt_async",
-                session_id
-            )))
+            .post(self.url(&format!("/session/{}/prompt_async", session_id)))
             .json(body)
             .send()
             .await
@@ -1010,9 +953,7 @@ impl ApiClient {
             .context("GET /permission")?;
         resp.error_for_status_ref()
             .context("GET /permission status")?;
-        resp.json()
-            .await
-            .context("parse list_permissions response")
+        resp.json().await.context("parse list_permissions response")
     }
 
     /// `GET /question`
@@ -1044,9 +985,7 @@ impl ApiClient {
             .context("POST /question/{requestID}/reply")?;
         resp.error_for_status_ref()
             .context("POST /question/{requestID}/reply status")?;
-        resp.json()
-            .await
-            .context("parse reply_question response")
+        resp.json().await.context("parse reply_question response")
     }
 
     /// `POST /question/{requestID}/reject`
@@ -1059,9 +998,7 @@ impl ApiClient {
             .context("POST /question/{requestID}/reject")?;
         resp.error_for_status_ref()
             .context("POST /question/{requestID}/reject status")?;
-        resp.json()
-            .await
-            .context("parse reject_question response")
+        resp.json().await.context("parse reject_question response")
     }
 
     // =======================================================================
@@ -1090,8 +1027,7 @@ impl ApiClient {
         limit: Option<u32>,
         dirs: Option<bool>,
     ) -> Result<Vec<String>> {
-        let mut params: Vec<(&str, String)> =
-            vec![("query", query.to_string())];
+        let mut params: Vec<(&str, String)> = vec![("query", query.to_string())];
         if let Some(ft) = file_type {
             params.push(("type", ft.to_string()));
         }
@@ -1154,9 +1090,7 @@ impl ApiClient {
             .context("GET /file/content")?;
         resp.error_for_status_ref()
             .context("GET /file/content status")?;
-        resp.json()
-            .await
-            .context("parse get_file_content response")
+        resp.json().await.context("parse get_file_content response")
     }
 
     /// `GET /file/status`
@@ -1169,9 +1103,7 @@ impl ApiClient {
             .context("GET /file/status")?;
         resp.error_for_status_ref()
             .context("GET /file/status status")?;
-        resp.json()
-            .await
-            .context("parse get_file_status response")
+        resp.json().await.context("parse get_file_status response")
     }
 
     // =======================================================================
@@ -1186,8 +1118,7 @@ impl ApiClient {
             .send()
             .await
             .context("GET /command")?;
-        resp.error_for_status_ref()
-            .context("GET /command status")?;
+        resp.error_for_status_ref().context("GET /command status")?;
         resp.json().await.context("parse list_commands response")
     }
 
@@ -1253,10 +1184,7 @@ impl ApiClient {
     }
 
     /// `POST /mcp/{name}/connect`
-    pub async fn connect_mcp(
-        &self,
-        name: &str,
-    ) -> Result<serde_json::Value> {
+    pub async fn connect_mcp(&self, name: &str) -> Result<serde_json::Value> {
         let resp = self
             .client
             .post(self.url(&format!("/mcp/{}/connect", name)))
@@ -1269,10 +1197,7 @@ impl ApiClient {
     }
 
     /// `POST /mcp/{name}/disconnect`
-    pub async fn disconnect_mcp(
-        &self,
-        name: &str,
-    ) -> Result<serde_json::Value> {
+    pub async fn disconnect_mcp(&self, name: &str) -> Result<serde_json::Value> {
         let resp = self
             .client
             .post(self.url(&format!("/mcp/{}/disconnect", name)))
@@ -1281,16 +1206,11 @@ impl ApiClient {
             .context("POST /mcp/{name}/disconnect")?;
         resp.error_for_status_ref()
             .context("POST /mcp/{name}/disconnect status")?;
-        resp.json()
-            .await
-            .context("parse disconnect_mcp response")
+        resp.json().await.context("parse disconnect_mcp response")
     }
 
     /// `POST /mcp/{name}/auth` -- Start MCP OAuth flow.
-    pub async fn mcp_auth_start(
-        &self,
-        name: &str,
-    ) -> Result<serde_json::Value> {
+    pub async fn mcp_auth_start(&self, name: &str) -> Result<serde_json::Value> {
         let resp = self
             .client
             .post(self.url(&format!("/mcp/{}/auth", name)))
@@ -1299,16 +1219,11 @@ impl ApiClient {
             .context("POST /mcp/{name}/auth")?;
         resp.error_for_status_ref()
             .context("POST /mcp/{name}/auth status")?;
-        resp.json()
-            .await
-            .context("parse mcp_auth_start response")
+        resp.json().await.context("parse mcp_auth_start response")
     }
 
     /// `DELETE /mcp/{name}/auth` -- Remove MCP OAuth credentials.
-    pub async fn mcp_auth_remove(
-        &self,
-        name: &str,
-    ) -> Result<serde_json::Value> {
+    pub async fn mcp_auth_remove(&self, name: &str) -> Result<serde_json::Value> {
         let resp = self
             .client
             .delete(self.url(&format!("/mcp/{}/auth", name)))
@@ -1317,9 +1232,7 @@ impl ApiClient {
             .context("DELETE /mcp/{name}/auth")?;
         resp.error_for_status_ref()
             .context("DELETE /mcp/{name}/auth status")?;
-        resp.json()
-            .await
-            .context("parse mcp_auth_remove response")
+        resp.json().await.context("parse mcp_auth_remove response")
     }
 
     /// `POST /mcp/{name}/auth/authenticate`
@@ -1405,11 +1318,7 @@ impl ApiClient {
     }
 
     /// `PUT /pty/{ptyID}`
-    pub async fn update_pty(
-        &self,
-        id: &str,
-        body: &serde_json::Value,
-    ) -> Result<Pty> {
+    pub async fn update_pty(&self, id: &str, body: &serde_json::Value) -> Result<Pty> {
         let resp = self
             .client
             .put(self.url(&format!("/pty/{}", id)))
@@ -1461,9 +1370,7 @@ impl ApiClient {
             .context("GET /formatter")?;
         resp.error_for_status_ref()
             .context("GET /formatter status")?;
-        resp.json()
-            .await
-            .context("parse list_formatters response")
+        resp.json().await.context("parse list_formatters response")
     }
 
     // =======================================================================
@@ -1533,9 +1440,7 @@ impl ApiClient {
             .context("POST /instance/dispose")?;
         resp.error_for_status_ref()
             .context("POST /instance/dispose status")?;
-        resp.json()
-            .await
-            .context("parse dispose_instance response")
+        resp.json().await.context("parse dispose_instance response")
     }
 
     // =======================================================================
@@ -1570,9 +1475,7 @@ impl ApiClient {
             .context("POST /tui/clear-prompt")?;
         resp.error_for_status_ref()
             .context("POST /tui/clear-prompt status")?;
-        resp.json()
-            .await
-            .context("parse tui_clear_prompt response")
+        resp.json().await.context("parse tui_clear_prompt response")
     }
 
     /// `POST /tui/submit-prompt`
@@ -1636,9 +1539,7 @@ impl ApiClient {
             .context("POST /tui/show-toast")?;
         resp.error_for_status_ref()
             .context("POST /tui/show-toast status")?;
-        resp.json()
-            .await
-            .context("parse tui_show_toast response")
+        resp.json().await.context("parse tui_show_toast response")
     }
 
     /// `POST /tui/open-help`
@@ -1652,9 +1553,7 @@ impl ApiClient {
             .context("POST /tui/open-help")?;
         resp.error_for_status_ref()
             .context("POST /tui/open-help status")?;
-        resp.json()
-            .await
-            .context("parse tui_open_help response")
+        resp.json().await.context("parse tui_open_help response")
     }
 
     /// `POST /tui/open-sessions`
@@ -1684,9 +1583,7 @@ impl ApiClient {
             .context("POST /tui/open-themes")?;
         resp.error_for_status_ref()
             .context("POST /tui/open-themes status")?;
-        resp.json()
-            .await
-            .context("parse tui_open_themes response")
+        resp.json().await.context("parse tui_open_themes response")
     }
 
     /// `POST /tui/open-models`
@@ -1700,9 +1597,7 @@ impl ApiClient {
             .context("POST /tui/open-models")?;
         resp.error_for_status_ref()
             .context("POST /tui/open-models status")?;
-        resp.json()
-            .await
-            .context("parse tui_open_models response")
+        resp.json().await.context("parse tui_open_models response")
     }
 
     /// `POST /tui/select-session`
@@ -1723,10 +1618,7 @@ impl ApiClient {
     }
 
     /// `POST /tui/publish` -- Publish a TUI event to connected clients.
-    pub async fn tui_publish(
-        &self,
-        event: &serde_json::Value,
-    ) -> Result<bool> {
+    pub async fn tui_publish(&self, event: &serde_json::Value) -> Result<bool> {
         let resp = self
             .client
             .post(self.url("/tui/publish"))
@@ -1736,9 +1628,7 @@ impl ApiClient {
             .context("POST /tui/publish")?;
         resp.error_for_status_ref()
             .context("POST /tui/publish status")?;
-        resp.json()
-            .await
-            .context("parse tui_publish response")
+        resp.json().await.context("parse tui_publish response")
     }
 
     /// `GET /tui/control/next` -- Long-poll for the next TUI control request.
@@ -1751,16 +1641,11 @@ impl ApiClient {
             .context("GET /tui/control/next")?;
         resp.error_for_status_ref()
             .context("GET /tui/control/next status")?;
-        resp.json()
-            .await
-            .context("parse tui_control_next response")
+        resp.json().await.context("parse tui_control_next response")
     }
 
     /// `POST /tui/control/response` -- Send a response to a TUI control request.
-    pub async fn tui_control_response(
-        &self,
-        body: &serde_json::Value,
-    ) -> Result<bool> {
+    pub async fn tui_control_response(&self, body: &serde_json::Value) -> Result<bool> {
         let resp = self
             .client
             .post(self.url("/tui/control/response"))

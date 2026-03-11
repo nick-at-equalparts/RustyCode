@@ -1,6 +1,6 @@
+use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap};
-use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::Frame;
 
 use crate::app::state::App;
@@ -16,13 +16,20 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
 
     let block = Block::default()
         .title(" Question ")
-        .title_style(Style::default().fg(theme.accent).add_modifier(Modifier::BOLD))
+        .title_style(
+            Style::default()
+                .fg(theme.accent)
+                .add_modifier(Modifier::BOLD),
+        )
         .borders(Borders::ALL)
         .border_style(Style::default().fg(theme.accent))
         .style(Style::default().bg(theme.bg).fg(theme.fg));
 
     if let Some(question) = app.pending_questions.first() {
-        let inner = popup.inner(Margin { vertical: 1, horizontal: 1 });
+        let inner = popup.inner(Margin {
+            vertical: 1,
+            horizontal: 1,
+        });
 
         frame.render_widget(block, popup);
 
@@ -50,19 +57,23 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
                 .map(|opt| {
                     let selected = opt.selected.unwrap_or(false);
                     let checkbox = if is_multi {
-                        if selected { "[x] " } else { "[ ] " }
+                        if selected {
+                            "[x] "
+                        } else {
+                            "[ ] "
+                        }
                     } else {
-                        if selected { "(*) " } else { "( ) " }
+                        if selected {
+                            "(*) "
+                        } else {
+                            "( ) "
+                        }
                     };
 
                     ListItem::new(Line::from(vec![
                         Span::styled(
                             checkbox,
-                            Style::default().fg(if selected {
-                                theme.success
-                            } else {
-                                theme.muted
-                            }),
+                            Style::default().fg(if selected { theme.success } else { theme.muted }),
                         ),
                         Span::styled(&opt.label, Style::default().fg(theme.fg)),
                     ]))

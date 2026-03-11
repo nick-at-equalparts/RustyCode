@@ -12,7 +12,11 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect) {
 
     let block = Block::default()
         .title(" Sessions ")
-        .title_style(Style::default().fg(theme.accent).add_modifier(Modifier::BOLD))
+        .title_style(
+            Style::default()
+                .fg(theme.accent)
+                .add_modifier(Modifier::BOLD),
+        )
         .borders(Borders::ALL)
         .border_style(Style::default().fg(theme.border))
         .style(Style::default().bg(theme.bg));
@@ -52,7 +56,9 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect) {
 
         // Status indicator
         let status_icon = match app.session_statuses.get(&session.id) {
-            Some(SessionStatus::Busy) => Span::styled("* ", Style::default().fg(theme.tool_running)),
+            Some(SessionStatus::Busy) => {
+                Span::styled("* ", Style::default().fg(theme.tool_running))
+            }
             Some(SessionStatus::Retry { .. }) => {
                 Span::styled("r ", Style::default().fg(theme.warning))
             }

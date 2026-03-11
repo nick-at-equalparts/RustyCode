@@ -16,7 +16,7 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(outer, area);
 
     if app.messages.is_empty() {
-        render_welcome(frame, app, area, &theme);
+        render_welcome(frame, app, area, theme);
         return;
     }
 
@@ -62,10 +62,7 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect) {
                 all_lines.push(Line::default());
 
                 // Header
-                let model_label = asst_msg
-                    .model_id
-                    .as_deref()
-                    .unwrap_or("assistant");
+                let model_label = asst_msg.model_id.as_deref().unwrap_or("assistant");
                 all_lines.push(Line::from(vec![
                     Span::styled(
                         format!(" {} ", model_label),
@@ -99,7 +96,9 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect) {
 
                 // Error
                 if let Some(ref err) = asst_msg.error {
-                    let err_text = err.as_str().map(|s| s.to_string())
+                    let err_text = err
+                        .as_str()
+                        .map(|s| s.to_string())
                         .unwrap_or_else(|| err.to_string());
                     all_lines.push(Line::from(Span::styled(
                         format!("   Error: {}", err_text),
@@ -151,13 +150,22 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect) {
                 .add_modifier(Modifier::BOLD),
         ))
         .alignment(Alignment::Right);
-        let indicator_area = Rect::new(area.x, area.y + area.height.saturating_sub(1), area.width, 1);
+        let indicator_area = Rect::new(
+            area.x,
+            area.y + area.height.saturating_sub(1),
+            area.width,
+            1,
+        );
         frame.render_widget(indicator, indicator_area);
     }
 }
 
 /// Convert a single Part into styled lines.
-fn render_part<'a>(part: &'a Part, lines: &mut Vec<Line<'a>>, theme: &'static crate::ui::themes::Theme) {
+fn render_part<'a>(
+    part: &'a Part,
+    lines: &mut Vec<Line<'a>>,
+    theme: &'static crate::ui::themes::Theme,
+) {
     match part {
         Part::Text(tp) => {
             if let Some(ref text) = tp.text {
@@ -199,10 +207,7 @@ fn render_part<'a>(part: &'a Part, lines: &mut Vec<Line<'a>>, theme: &'static cr
                     format!("   [{}] ", icon),
                     Style::default().fg(color).add_modifier(Modifier::BOLD),
                 ),
-                Span::styled(
-                    name.to_string(),
-                    Style::default().fg(color),
-                ),
+                Span::styled(name.to_string(), Style::default().fg(color)),
             ];
             if let Some(cmd) = command {
                 // Truncate long commands to first line, max ~60 chars
@@ -243,13 +248,14 @@ fn render_part<'a>(part: &'a Part, lines: &mut Vec<Line<'a>>, theme: &'static cr
             }
 
             // Show error on failure
-            if let ToolState::Error { error, .. } = &tp.state {
-                if let Some(err) = error {
-                    lines.push(Line::from(Span::styled(
-                        format!("       {}", err),
-                        Style::default().fg(theme.tool_error),
-                    )));
-                }
+            if let ToolState::Error {
+                error: Some(err), ..
+            } = &tp.state
+            {
+                lines.push(Line::from(Span::styled(
+                    format!("       {}", err),
+                    Style::default().fg(theme.tool_error),
+                )));
             }
         }
         Part::Reasoning(rp) => {
@@ -283,15 +289,9 @@ fn render_part<'a>(part: &'a Part, lines: &mut Vec<Line<'a>>, theme: &'static cr
             }
         }
         Part::File(fp) => {
-            let label = fp
-                .file_path
-                .as_deref()
-                .unwrap_or("(unknown file)");
+            let label = fp.file_path.as_deref().unwrap_or("(unknown file)");
             lines.push(Line::from(vec![
-                Span::styled(
-                    "   [file] ",
-                    Style::default().fg(theme.accent),
-                ),
+                Span::styled("   [file] ", Style::default().fg(theme.accent)),
                 Span::styled(
                     label.to_string(),
                     Style::default()
@@ -329,29 +329,30 @@ fn render_part<'a>(part: &'a Part, lines: &mut Vec<Line<'a>>, theme: &'static cr
             ]));
         }
         // Other part variants are rendered minimally
-        Part::Snapshot(_) | Part::Patch(_) | Part::Retry(_) | Part::Compaction(_) | Part::Subtask(_) => {}
+        Part::Snapshot(_)
+        | Part::Patch(_)
+        | Part::Retry(_)
+        | Part::Compaction(_)
+        | Part::Subtask(_) => {}
     }
 }
 
 /// Very basic markdown-ish rendering for text content.
 /// Handles **bold**, `inline code`, and ```code blocks```.
-fn render_text_content<'a>(content: &'a str, lines: &mut Vec<Line<'a>>, theme: &'static crate::ui::themes::Theme) {
+fn render_text_content<'a>(
+    content: &'a str,
+    lines: &mut Vec<Line<'a>>,
+    theme: &'static crate::ui::themes::Theme,
+) {
     let mut in_code_block = false;
 
     for raw_line in content.lines() {
         if raw_line.trim_start().starts_with("```") {
             in_code_block = !in_code_block;
-            if in_code_block {
-                lines.push(Line::from(Span::styled(
-                    "   --------".to_string(),
-                    Style::default().fg(theme.muted),
-                )));
-            } else {
-                lines.push(Line::from(Span::styled(
-                    "   --------".to_string(),
-                    Style::default().fg(theme.muted),
-                )));
-            }
+            lines.push(Line::from(Span::styled(
+                "   --------".to_string(),
+                Style::default().fg(theme.muted),
+            )));
             continue;
         }
 
@@ -374,7 +375,10 @@ fn render_text_content<'a>(content: &'a str, lines: &mut Vec<Line<'a>>, theme: &
 }
 
 /// Parse a single line for **bold** and `code` spans.
-fn parse_inline_spans<'a>(line: &'a str, theme: &'static crate::ui::themes::Theme) -> Vec<Span<'a>> {
+fn parse_inline_spans<'a>(
+    line: &'a str,
+    theme: &'static crate::ui::themes::Theme,
+) -> Vec<Span<'a>> {
     let mut spans: Vec<Span<'a>> = Vec::new();
     let mut remaining = line;
 
@@ -460,15 +464,15 @@ fn render_welcome(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
 
     // Shortcuts (must match actual bindings in input/mod.rs)
     let shortcuts: &[(&str, &str)] = &[
-        ("Enter",       " Send message"),
+        ("Enter", " Send message"),
         ("Shift+Enter", " New line"),
-        ("Ctrl+O",      " Open sessions"),
-        ("Ctrl+N",      " New session"),
-        ("Ctrl+B",      " Toggle sidebar"),
-        ("Ctrl+K",      " Switch model"),
-        ("Ctrl+P",      " Command palette"),
-        ("F1",          " Help"),
-        ("Esc",         " Quit"),
+        ("Ctrl+O", " Open sessions"),
+        ("Ctrl+N", " New session"),
+        ("Ctrl+B", " Toggle sidebar"),
+        ("Ctrl+K", " Switch model"),
+        ("Ctrl+P", " Command palette"),
+        ("F1", " Help"),
+        ("Esc", " Quit"),
     ];
 
     for &(k, d) in shortcuts {

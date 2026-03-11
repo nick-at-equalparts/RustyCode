@@ -30,10 +30,10 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
     let vert = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Min(1),                  // messages (stretches)
-            Constraint::Length(thinking_h),       // thinking indicator (0 when idle)
-            Constraint::Length(editor_h),         // editor
-            Constraint::Length(1),                // status bar
+            Constraint::Min(1),             // messages (stretches)
+            Constraint::Length(thinking_h), // thinking indicator (0 when idle)
+            Constraint::Length(editor_h),   // editor
+            Constraint::Length(1),          // status bar
         ])
         .split(main_area);
 

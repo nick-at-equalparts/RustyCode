@@ -46,5 +46,10 @@ impl Config {
 /// Returns `~/.config/rustycode/config.json`, or `None` if the home dir can't be determined.
 fn config_path() -> Option<PathBuf> {
     let home = std::env::var("HOME").ok()?;
-    Some(PathBuf::from(home).join(".config").join("rustycode").join("config.json"))
+    Some(
+        PathBuf::from(home)
+            .join(".config")
+            .join("rustycode")
+            .join("config.json"),
+    )
 }

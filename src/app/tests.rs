@@ -1,13 +1,13 @@
 use crate::api::ApiClient;
 use crate::app::state::{App, ChatMode, Dialog, Page};
 use crate::types::{
+    Agent, AssistantMessage, Message, MessageTime, Model, Part, PermissionReply, PermissionRequest,
+    Provider, Session, SessionStatus, SessionTime, TextPart, Todo, TodoStatus, UserMessage,
+};
+use crate::types::{
     Event, MessagePartDeltaProps, MessageUpdatedProps, MessageWithParts, PartUpdatedProps,
     PermissionAskedProps, PermissionRepliedProps, SessionIdProps, SessionInfoProps,
     SessionStatusProps, TodoUpdatedProps,
-};
-use crate::types::{
-    Agent, AssistantMessage, Message, MessageTime, Part, PermissionReply, PermissionRequest,
-    Provider, Model, Session, SessionStatus, SessionTime, TextPart, Todo, TodoStatus, UserMessage,
 };
 
 // ── Helpers ─────────────────────────────────────────────────────────────
@@ -1402,10 +1402,7 @@ fn make_ctrl_key(ch: char) -> KeyEvent {
 fn test_key_burst_to_paste_basic_chars() {
     use crate::app::event_loop::key_burst_to_paste;
 
-    let keys = vec![
-        make_key(KeyCode::Char('H')),
-        make_key(KeyCode::Char('i')),
-    ];
+    let keys = vec![make_key(KeyCode::Char('H')), make_key(KeyCode::Char('i'))];
     assert_eq!(key_burst_to_paste(&keys), "Hi");
 }
 

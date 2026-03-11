@@ -637,7 +637,8 @@ fn handle_agent_autocomplete_key(app: &mut App, key: KeyEvent) -> Action {
                 if let Some(at_byte) = text_before.rfind('@') {
                     let replacement = format!("@{} ", name);
                     let new_cursor = app.input_text[..at_byte].chars().count() + name.len() + 2;
-                    app.input_text.replace_range(at_byte..byte_end, &replacement);
+                    app.input_text
+                        .replace_range(at_byte..byte_end, &replacement);
                     app.input_cursor = new_cursor;
                 }
             }

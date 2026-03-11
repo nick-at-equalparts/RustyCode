@@ -87,10 +87,7 @@ fn reconnecting_sse_stream(
                             return Some((Ok(event), state));
                         }
                         Some(Err(e)) => {
-                            tracing::warn!(
-                                "SSE stream error, will reconnect: {}",
-                                e
-                            );
+                            tracing::warn!("SSE stream error, will reconnect: {}", e);
                             state.inner = None;
                             // fall through to reconnect
                         }
@@ -198,10 +195,7 @@ async fn connect_sse(
 ///
 /// When `is_global` is true the data JSON is expected to match:
 /// `{ "directory": "...", "payload": <Event> }` -- we extract the `payload`.
-fn sse_decode<S>(
-    byte_stream: S,
-    is_global: bool,
-) -> impl Stream<Item = Result<Event>> + Send
+fn sse_decode<S>(byte_stream: S, is_global: bool) -> impl Stream<Item = Result<Event>> + Send
 where
     S: Stream<Item = Result<bytes::Bytes, reqwest::Error>> + Send + 'static,
 {
@@ -218,26 +212,17 @@ where
                             // Empty line signals end of one SSE frame.
                             if !data_buf.is_empty() {
                                 let data = std::mem::take(&mut data_buf);
-                                let _etype =
-                                    std::mem::take(&mut event_type);
+                                let _etype = std::mem::take(&mut event_type);
 
                                 let parse_result = if is_global {
                                     parse_global_event_data(&data)
                                 } else {
-                                    serde_json::from_str::<Event>(&data)
-                                        .map_err(Into::into)
+                                    serde_json::from_str::<Event>(&data).map_err(Into::into)
                                 };
 
                                 match parse_result {
                                     Ok(event) => {
-                                        return Some((
-                                            Ok(event),
-                                            (
-                                                stream,
-                                                event_type,
-                                                data_buf,
-                                            ),
-                                        ));
+                                        return Some((Ok(event), (stream, event_type, data_buf)));
                                     }
                                     Err(e) => {
                                         tracing::debug!(
@@ -250,13 +235,9 @@ where
                                     }
                                 }
                             }
-                        } else if let Some(value) =
-                            line.strip_prefix("event:")
-                        {
+                        } else if let Some(value) = line.strip_prefix("event:") {
                             event_type = value.trim().to_string();
-                        } else if let Some(value) =
-                            line.strip_prefix("data:")
-                        {
+                        } else if let Some(value) = line.strip_prefix("data:") {
                             if !data_buf.is_empty() {
                                 data_buf.push('\n');
                             }
@@ -296,8 +277,7 @@ pub(crate) fn parse_global_event_data(data: &str) -> Result<Event> {
     }
 
     // Fallback: treat the entire object as an Event (defensive).
-    serde_json::from_value(v)
-        .context("failed to parse global event data as Event")
+    serde_json::from_value(v).context("failed to parse global event data as Event")
 }
 
 // ===========================================================================
@@ -315,21 +295,18 @@ where
     futures::stream::unfold(
         (
             Box::pin(byte_stream)
-                as Pin<
-                    Box<
-                        dyn Stream<
-                                Item = Result<bytes::Bytes, reqwest::Error>,
-                            > + Send,
-                    >,
-                >,
+                as Pin<Box<dyn Stream<Item = Result<bytes::Bytes, reqwest::Error>> + Send>>,
             String::new(),
         ),
-        |(mut stream, mut buffer): (Pin<Box<dyn Stream<Item = Result<bytes::Bytes, reqwest::Error>> + Send>>, String)| async move {
+        #[allow(clippy::type_complexity)]
+        |(mut stream, mut buffer): (
+            Pin<Box<dyn Stream<Item = Result<bytes::Bytes, reqwest::Error>> + Send>>,
+            String,
+        )| async move {
             loop {
                 // Emit a line if we already have one buffered.
                 if let Some(pos) = buffer.find('\n') {
-                    let line =
-                        buffer[..pos].trim_end_matches('\r').to_string();
+                    let line = buffer[..pos].trim_end_matches('\r').to_string();
                     buffer = buffer[pos + 1..].to_string();
                     return Some((Ok(line), (stream, buffer)));
                 }

@@ -6,9 +6,7 @@
 //! Press 'q' to quit.
 
 use crossterm::{
-    event::{
-        self, DisableBracketedPaste, EnableBracketedPaste, Event, KeyCode, KeyEventKind,
-    },
+    event::{self, DisableBracketedPaste, EnableBracketedPaste, Event, KeyCode, KeyEventKind},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -32,7 +30,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         crossterm::terminal::Clear(crossterm::terminal::ClearType::All)
     )?;
     write!(stdout, "=== Paste Diagnostic ===\r\n")?;
-    write!(stdout, "Paste some multi-line text and watch what events appear.\r\n")?;
+    write!(
+        stdout,
+        "Paste some multi-line text and watch what events appear.\r\n"
+    )?;
     write!(stdout, "Press 'q' to quit.\r\n")?;
     write!(stdout, "---\r\n")?;
     stdout.flush()?;

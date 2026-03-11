@@ -11,7 +11,11 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
 
     let block = Block::default()
         .title(" Logs ")
-        .title_style(Style::default().fg(theme.accent).add_modifier(Modifier::BOLD))
+        .title_style(
+            Style::default()
+                .fg(theme.accent)
+                .add_modifier(Modifier::BOLD),
+        )
         .borders(Borders::ALL)
         .border_style(Style::default().fg(theme.border))
         .style(Style::default().bg(theme.bg).fg(theme.fg));

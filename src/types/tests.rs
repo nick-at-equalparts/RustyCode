@@ -281,10 +281,7 @@ fn test_message_assistant_deserialize() {
                 Some("2025-01-15T10:30:45Z")
             );
             assert_eq!(asst.parent_id.as_deref(), Some("msg_user1"));
-            assert_eq!(
-                asst.model_id.as_deref(),
-                Some("claude-sonnet-4-20250514")
-            );
+            assert_eq!(asst.model_id.as_deref(), Some("claude-sonnet-4-20250514"));
             assert_eq!(asst.provider_id.as_deref(), Some("anthropic"));
             assert_eq!(asst.mode.as_deref(), Some("normal"));
             assert_eq!(asst.agent.as_deref(), Some("default"));
@@ -506,7 +503,10 @@ fn test_part_tool_running() {
     match part {
         Part::Tool(tool) => {
             if let ToolState::Running { input } = &tool.state {
-                let cmd = input.as_ref().and_then(|v| v.get("command")).and_then(|v| v.as_str());
+                let cmd = input
+                    .as_ref()
+                    .and_then(|v| v.get("command"))
+                    .and_then(|v| v.as_str());
                 assert_eq!(cmd, Some("ls -la"));
             } else {
                 panic!("Expected ToolState::Running");
@@ -1083,18 +1083,13 @@ fn test_event_message_updated_assistant() {
 
     let event: Event = serde_json::from_value(json).unwrap();
     match event {
-        Event::MessageUpdated { properties } => {
-            match properties.info {
-                Message::Assistant(asst) => {
-                    assert_eq!(asst.id, "msg_a1");
-                    assert_eq!(
-                        asst.model_id.as_deref(),
-                        Some("claude-sonnet-4-20250514")
-                    );
-                }
-                _ => panic!("Expected Message::Assistant"),
+        Event::MessageUpdated { properties } => match properties.info {
+            Message::Assistant(asst) => {
+                assert_eq!(asst.id, "msg_a1");
+                assert_eq!(asst.model_id.as_deref(), Some("claude-sonnet-4-20250514"));
             }
-        }
+            _ => panic!("Expected Message::Assistant"),
+        },
         _ => panic!("Expected Event::MessageUpdated"),
     }
 }
@@ -2364,10 +2359,7 @@ fn test_skill() {
 
     let skill: Skill = serde_json::from_value(json).unwrap();
     assert_eq!(skill.name.as_deref(), Some("code-review"));
-    assert_eq!(
-        skill.description.as_deref(),
-        Some("Review code for issues")
-    );
+    assert_eq!(skill.description.as_deref(), Some("Review code for issues"));
 }
 
 #[test]

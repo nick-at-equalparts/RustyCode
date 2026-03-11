@@ -106,7 +106,9 @@ pub enum Event {
 
     // ── Installation events ─────────────────────────────────────────
     #[serde(rename = "installation.updated")]
-    InstallationUpdated { properties: InstallationUpdatedProps },
+    InstallationUpdated {
+        properties: InstallationUpdatedProps,
+    },
     #[serde(rename = "installation.update-available")]
     InstallationUpdateAvailable {
         properties: InstallationUpdateAvailableProps,
@@ -126,13 +128,17 @@ pub enum Event {
     #[serde(rename = "mcp.tools.changed")]
     McpToolsChanged { properties: McpToolsChangedProps },
     #[serde(rename = "mcp.browser.open.failed")]
-    McpBrowserOpenFailed { properties: McpBrowserOpenFailedProps },
+    McpBrowserOpenFailed {
+        properties: McpBrowserOpenFailedProps,
+    },
 
     // ── LSP events ──────────────────────────────────────────────────
     #[serde(rename = "lsp.updated")]
     LspUpdated { properties: LspUpdatedProps },
     #[serde(rename = "lsp.client.diagnostics")]
-    LspClientDiagnostics { properties: LspClientDiagnosticsProps },
+    LspClientDiagnostics {
+        properties: LspClientDiagnosticsProps,
+    },
 
     // ── Worktree events ─────────────────────────────────────────────
     #[serde(rename = "worktree.ready")]

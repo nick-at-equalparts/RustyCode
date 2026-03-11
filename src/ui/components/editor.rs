@@ -48,13 +48,21 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect) {
     if let Some(line_count) = app.paste_line_count {
         let label = format!("[Pasted {} lines]", line_count);
         let rendered = Line::from(vec![
-            Span::styled(label, Style::default().fg(theme.muted).add_modifier(Modifier::ITALIC)),
+            Span::styled(
+                label,
+                Style::default()
+                    .fg(theme.muted)
+                    .add_modifier(Modifier::ITALIC),
+            ),
             Span::styled(" ", cursor_style),
         ]);
         let paragraph = Paragraph::new(rendered).block(block);
         frame.render_widget(paragraph, area);
         // Cursor at end of label
-        let inner = area.inner(Margin { vertical: 1, horizontal: 1 });
+        let inner = area.inner(Margin {
+            vertical: 1,
+            horizontal: 1,
+        });
         let label_len = format!("[Pasted {} lines]", line_count).chars().count() as u16;
         let cx = inner.x + label_len;
         let cy = inner.y;
@@ -105,7 +113,7 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect) {
             }
             // If cursor could be at exact wrap boundary (end of full-width last chunk),
             // add an empty visual line so it has somewhere to render.
-            if total_chars % inner_width == 0 {
+            if total_chars.is_multiple_of(inner_width) {
                 visual_chunks.push(VisualChunk {
                     text: "",
                     abs_byte_start: line_start + line_text.len(),
@@ -128,8 +136,8 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect) {
         // Determine if this is the last chunk of its logical line.
         // Next chunk from the same logical line has abs_byte_start == chunk_byte_end;
         // next chunk from a new logical line has abs_byte_start == chunk_byte_end + 1 (past '\n').
-        let is_last_of_logical = vi + 1 >= visual_chunks.len()
-            || visual_chunks[vi + 1].abs_byte_start != chunk_byte_end;
+        let is_last_of_logical =
+            vi + 1 >= visual_chunks.len() || visual_chunks[vi + 1].abs_byte_start != chunk_byte_end;
 
         let cursor_here = !found_cursor
             && byte_cursor >= chunk.abs_byte_start

@@ -638,7 +638,8 @@ fn parse_global_event_data_rejects_invalid_payload() {
 #[test]
 fn global_event_payload_parsing() {
     // GlobalEvent struct was removed; test that parse_global_event_data extracts the payload
-    let data = r#"{"directory":"/workspace","payload":{"type":"server.connected","properties":{}}}"#;
+    let data =
+        r#"{"directory":"/workspace","payload":{"type":"server.connected","properties":{}}}"#;
     let event = parse_global_event_data(data).unwrap();
     match event {
         Event::ServerConnected { .. } => {}
@@ -696,9 +697,11 @@ fn health_response_rejects_missing_fields() {
 #[test]
 fn model_selector_rejects_wrong_field_names() {
     // camelCase field names should NOT work because we use explicit renames.
-    let result =
-        serde_json::from_str::<ModelSelector>(r#"{"provider_id":"x","model_id":"y"}"#);
-    assert!(result.is_err(), "snake_case field names should not deserialize");
+    let result = serde_json::from_str::<ModelSelector>(r#"{"provider_id":"x","model_id":"y"}"#);
+    assert!(
+        result.is_err(),
+        "snake_case field names should not deserialize"
+    );
 }
 
 #[test]

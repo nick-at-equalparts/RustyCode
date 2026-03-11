@@ -12,10 +12,7 @@ use crate::types::{
 };
 
 /// Result of a background session load (messages + todos).
-pub type SessionLoadResult = (
-    Result<Vec<MessageWithParts>>,
-    Result<Vec<Todo>>,
-);
+pub type SessionLoadResult = (Result<Vec<MessageWithParts>>, Result<Vec<Todo>>);
 
 /// Number of recent messages to fetch on session open (fast initial load).
 /// The server supports `?limit=N` and returns the N most recent messages.
@@ -56,7 +53,7 @@ impl ChatMode {
     /// Returns the variant string sent to the API.
     pub fn variant(self) -> Option<&'static str> {
         match self {
-            ChatMode::Build => None,        // default — no variant needed
+            ChatMode::Build => None, // default — no variant needed
             ChatMode::Plan => Some("plan"),
         }
     }
@@ -242,13 +239,8 @@ impl App {
                 if self.current_model.is_none() {
                     for provider_id in &response.connected {
                         if let Some(model_id) = response.default.get(provider_id) {
-                            self.current_model =
-                                Some((provider_id.clone(), model_id.clone()));
-                            tracing::info!(
-                                "Default model resolved: {}/{}",
-                                provider_id,
-                                model_id
-                            );
+                            self.current_model = Some((provider_id.clone(), model_id.clone()));
+                            tracing::info!("Default model resolved: {}/{}", provider_id, model_id);
                             break;
                         }
                     }
@@ -381,7 +373,9 @@ impl App {
                 // the bottom, so prepending messages above is invisible.
                 tracing::debug!(
                     "Backfill applied: {} → {} messages ({} prepended)",
-                    old_len, new_len, prepended
+                    old_len,
+                    new_len,
+                    prepended
                 );
             }
             Err(e) => {
@@ -459,9 +453,7 @@ impl App {
             format: None,
         };
 
-        self.client
-            .send_prompt_async(&session_id, &request)
-            .await?;
+        self.client.send_prompt_async(&session_id, &request).await?;
 
         // Clear input after successful send
         self.input_text.clear();
@@ -807,7 +799,11 @@ impl App {
             return;
         }
 
-        if let Some(existing) = self.messages.iter_mut().find(|m| message_id(&m.info) == msg_id_val) {
+        if let Some(existing) = self
+            .messages
+            .iter_mut()
+            .find(|m| message_id(&m.info) == msg_id_val)
+        {
             existing.info = msg.clone();
             return;
         }
@@ -926,7 +922,7 @@ impl App {
             if chars == 0 {
                 count += 1;
             } else {
-                count += (chars + w - 1) / w;
+                count += chars.div_ceil(w);
             }
         }
         count as u16
@@ -993,7 +989,7 @@ impl App {
         if let Some((provider_id, model_id)) = &self.current_model {
             for provider in &self.providers {
                 if &provider.id == provider_id {
-                    for (_key, model) in &provider.models {
+                    for model in provider.models.values() {
                         if &model.id == model_id {
                             return format!("{}/{}", provider.name, model.name);
                         }

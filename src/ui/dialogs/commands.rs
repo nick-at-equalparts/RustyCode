@@ -1,6 +1,6 @@
+use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph};
-use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::Frame;
 
 use crate::app::state::App;
@@ -16,7 +16,11 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
 
     let outer_block = Block::default()
         .title(" Commands (type to filter, Enter: run, Esc: close) ")
-        .title_style(Style::default().fg(theme.accent).add_modifier(Modifier::BOLD))
+        .title_style(
+            Style::default()
+                .fg(theme.accent)
+                .add_modifier(Modifier::BOLD),
+        )
         .borders(Borders::ALL)
         .border_style(Style::default().fg(theme.accent))
         .style(Style::default().bg(theme.bg).fg(theme.fg));
@@ -24,7 +28,10 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(outer_block, popup);
 
     // Inner area (inside the border)
-    let inner = popup.inner(Margin { vertical: 1, horizontal: 1 });
+    let inner = popup.inner(Margin {
+        vertical: 1,
+        horizontal: 1,
+    });
 
     // Split inner into filter input (1 line) + list
     let chunks = Layout::default()
@@ -83,20 +90,14 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
                 .unwrap_or_default();
 
             ListItem::new(Line::from(vec![
-                Span::styled(
-                    format!("  {}", cmd.name),
-                    Style::default().fg(theme.fg),
-                ),
+                Span::styled(format!("  {}", cmd.name), Style::default().fg(theme.fg)),
                 Span::styled(
                     shortcut,
                     Style::default()
                         .fg(theme.accent)
                         .add_modifier(Modifier::DIM),
                 ),
-                Span::styled(
-                    format!("  {}", desc),
-                    Style::default().fg(theme.muted),
-                ),
+                Span::styled(format!("  {}", desc), Style::default().fg(theme.muted)),
             ]))
         })
         .collect();

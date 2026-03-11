@@ -19,7 +19,10 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect) {
     };
     left_parts.push(Span::styled(
         format!(" {} ", mode_label),
-        Style::default().fg(mode_fg).bg(mode_bg).add_modifier(Modifier::BOLD),
+        Style::default()
+            .fg(mode_fg)
+            .bg(mode_bg)
+            .add_modifier(Modifier::BOLD),
     ));
 
     let project_name = app.project_name();
@@ -55,10 +58,7 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect) {
     };
 
     let right_parts = vec![
-        Span::styled(
-            format!(" {} ", model_name),
-            Style::default().fg(theme.fg),
-        ),
+        Span::styled(format!(" {} ", model_name), Style::default().fg(theme.fg)),
         Span::styled(" | ", Style::default().fg(theme.border)),
         conn_indicator,
     ];
@@ -95,8 +95,8 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect) {
 
     spans.extend(right_parts);
 
-    let bar = Paragraph::new(Line::from(spans))
-        .style(Style::default().bg(theme.selection).fg(theme.fg));
+    let bar =
+        Paragraph::new(Line::from(spans)).style(Style::default().bg(theme.selection).fg(theme.fg));
 
     frame.render_widget(bar, area);
 }

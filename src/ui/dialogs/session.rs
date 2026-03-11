@@ -16,7 +16,11 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
 
     let block = Block::default()
         .title(" Sessions (Enter: select, Esc: close) ")
-        .title_style(Style::default().fg(theme.accent).add_modifier(Modifier::BOLD))
+        .title_style(
+            Style::default()
+                .fg(theme.accent)
+                .add_modifier(Modifier::BOLD),
+        )
         .borders(Borders::ALL)
         .border_style(Style::default().fg(theme.accent))
         .style(Style::default().bg(theme.bg).fg(theme.fg));

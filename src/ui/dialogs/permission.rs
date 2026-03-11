@@ -80,14 +80,8 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
             if !always.is_empty() {
                 lines.push(Line::default());
                 lines.push(Line::from(vec![
-                    Span::styled(
-                        "  Always pattern: ",
-                        Style::default().fg(theme.muted),
-                    ),
-                    Span::styled(
-                        always.join(", "),
-                        Style::default().fg(theme.muted),
-                    ),
+                    Span::styled("  Always pattern: ", Style::default().fg(theme.muted)),
+                    Span::styled(always.join(", "), Style::default().fg(theme.muted)),
                 ]));
             }
         }

@@ -15,7 +15,11 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
 
     let block = Block::default()
         .title(" Help - Keybindings (Esc to close) ")
-        .title_style(Style::default().fg(theme.accent).add_modifier(Modifier::BOLD))
+        .title_style(
+            Style::default()
+                .fg(theme.accent)
+                .add_modifier(Modifier::BOLD),
+        )
         .borders(Borders::ALL)
         .border_style(Style::default().fg(theme.accent))
         .style(Style::default().bg(theme.bg).fg(theme.fg));
@@ -112,9 +116,7 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
 
     let widths = [Constraint::Length(22), Constraint::Min(1)];
 
-    let table = Table::new(rows, widths)
-        .block(block)
-        .column_spacing(2);
+    let table = Table::new(rows, widths).block(block).column_spacing(2);
 
     frame.render_widget(table, popup);
 }

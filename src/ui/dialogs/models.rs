@@ -20,14 +20,17 @@ pub fn filtered_models(app: &App) -> Vec<ModelEntry> {
     let mut entries = Vec::new();
 
     for provider in &app.providers {
-        for (_key, model) in &provider.models {
+        for model in provider.models.values() {
             if !filter.is_empty() {
                 let haystack = format!(
                     "{} {} {} {}",
                     provider.name, provider.id, model.name, model.id
                 )
                 .to_lowercase();
-                if !filter.split_whitespace().all(|word| haystack.contains(word)) {
+                if !filter
+                    .split_whitespace()
+                    .all(|word| haystack.contains(word))
+                {
                     continue;
                 }
             }
@@ -68,16 +71,18 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
     } else {
         Style::default().fg(theme.fg)
     };
-    let search = Paragraph::new(search_text)
-        .style(search_style)
-        .block(
-            Block::default()
-                .title(format!(" Models ({}) ", entries.len()))
-                .title_style(Style::default().fg(theme.accent).add_modifier(Modifier::BOLD))
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(theme.accent))
-                .style(Style::default().bg(theme.bg)),
-        );
+    let search = Paragraph::new(search_text).style(search_style).block(
+        Block::default()
+            .title(format!(" Models ({}) ", entries.len()))
+            .title_style(
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD),
+            )
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(theme.accent))
+            .style(Style::default().bg(theme.bg)),
+    );
     frame.render_widget(search, chunks[0]);
 
     // Model list
