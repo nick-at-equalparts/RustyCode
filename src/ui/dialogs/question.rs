@@ -62,12 +62,10 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
                         } else {
                             "[ ] "
                         }
+                    } else if selected {
+                        "(*) "
                     } else {
-                        if selected {
-                            "(*) "
-                        } else {
-                            "( ) "
-                        }
+                        "( ) "
                     };
 
                     ListItem::new(Line::from(vec![
